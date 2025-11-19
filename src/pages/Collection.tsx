@@ -7,6 +7,7 @@ import { TradingCard } from "@/components/TradingCard";
 import { CardSearchBar } from "@/components/CardSearchBar";
 import { CardEditModal } from "@/components/CardEditModal";
 import { BulkEditModal } from "@/components/BulkEditModal";
+import { BulkListForSaleModal } from "@/components/BulkListForSaleModal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Grid3x3, List, Filter, Plus, Upload, DollarSign, Maximize2, CheckSquare } from "lucide-react";
@@ -68,6 +69,7 @@ const Collection = () => {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const [isBulkListForSaleOpen, setIsBulkListForSaleOpen] = useState(false);
   const [csvPreviewCards, setCsvPreviewCards] = useState<Array<{
     id: string;
     name: string;
@@ -701,6 +703,16 @@ const Collection = () => {
                 <Button 
                   variant="default" 
                   size="sm"
+                  className="gap-2 bg-green-600 hover:bg-green-700"
+                  disabled={selectedCardIds.size === 0}
+                  onClick={() => setIsBulkListForSaleOpen(true)}
+                >
+                  <DollarSign className="h-4 w-4" />
+                  List for Sale ({selectedCardIds.size})
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="sm"
                   disabled={selectedCardIds.size === 0}
                   onClick={() => setIsBulkEditOpen(true)}
                 >
@@ -860,6 +872,19 @@ const Collection = () => {
           const card = userCards.find(c => c.id === id);
           return { id, name: card?.name || '' };
         })}
+        onComplete={() => {
+          setSelectedCardIds(new Set());
+          setSelectionMode(false);
+        }}
+      />
+
+      <BulkListForSaleModal
+        open={isBulkListForSaleOpen}
+        onOpenChange={setIsBulkListForSaleOpen}
+        selectedCards={Array.from(selectedCardIds).map(id => {
+          const card = userCards.find(c => c.id === id);
+          return card!;
+        }).filter(Boolean)}
         onComplete={() => {
           setSelectedCardIds(new Set());
           setSelectionMode(false);
