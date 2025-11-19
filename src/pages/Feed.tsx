@@ -196,10 +196,14 @@ const Feed = () => {
                 />
               )}
 
-              {/* Post Actions */}
               <div className="flex items-center gap-4 pt-3 border-t border-border">
-                <Button variant="ghost" size="sm" className="gap-2">
-                  <Heart className="h-4 w-4" />
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="gap-2"
+                  onClick={() => handleLike(post.id, post.likes)}
+                >
+                  <Heart className={`h-4 w-4 ${post.likes.includes(user?.uid || '') ? 'fill-primary text-primary' : ''}`} />
                   <span className="text-xs">{post.likes.length || 0}</span>
                 </Button>
                 <Button variant="ghost" size="sm" className="gap-2">
