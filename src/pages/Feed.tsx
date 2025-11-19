@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { collection, query, orderBy, limit, onSnapshot, Timestamp } from "firebase/firestore";
+import { collection, query, orderBy, limit, onSnapshot, Timestamp, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Heart, MessageCircle, Share2, LogOut } from "lucide-react";
+import { Heart, MessageCircle, Share2, LogOut, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logo from "@/assets/hatake-logo.png";
 import { PostGallery } from "@/components/PostGallery";
+import { CreatePostDialog } from "@/components/CreatePostDialog";
+import { toast } from "sonner";
 
 interface Post {
   id: string;
@@ -36,6 +38,7 @@ const Feed = () => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -87,6 +90,22 @@ const Feed = () => {
     navigate('/auth');
   };
 
+  const handleLike = async (postId: string, likes: string[]) => {
+    if (!user) return;
+    
+    const postRef = doc(db, 'posts', postId);
+    const isLiked = likes.includes(user.uid);
+    
+    try {
+      await updateDoc(postRef, {
+        likes: isLiked ? arrayRemove(user.uid) : arrayUnion(user.uid)
+      });
+    } catch (error) {
+      console.error('Error updating like:', error);
+      toast.error('Failed to update like');
+    }
+  };
+
   const getInitials = (name?: string | null) => {
     if (!name || typeof name !== 'string') return '?';
     const parts = name.trim().split(' ').filter(Boolean);
@@ -113,12 +132,20 @@ const Feed = () => {
                 <p className="text-sm text-muted-foreground">Your TCG Community</p>
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4" />
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="default" size="sm" onClick={() => setIsCreatePostOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Post
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </header>
+
+      <CreatePostDialog open={isCreatePostOpen} onOpenChange={setIsCreatePostOpen} />
 
       {/* Feed */}
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
