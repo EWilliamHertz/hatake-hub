@@ -425,23 +425,10 @@ const Collection = () => {
 
                             results.forEach(({ card, matchedCard }) => {
                               const docRef = doc(collection(db, 'users', user.uid, 'collection'));
-                              const image_uris = matchedCard?.image_uris
-                                ? matchedCard.image_uris
-                                : matchedCard?.images
-                                ? {
-                                    small: matchedCard.images[0]?.small || '',
-                                    normal: matchedCard.images[0]?.medium || '',
-                                    large: matchedCard.images[0]?.large || '',
-                                  }
-                                : undefined;
 
-                              batch.set(docRef, {
-                                api_id: matchedCard?.api_id || matchedCard?.id || undefined,
+                              const data: any = {
                                 name: matchedCard?.name || card.name,
                                 set_name: matchedCard?.set_name || card.set_name,
-                                rarity: matchedCard?.rarity || 'unknown',
-                                collector_number: matchedCard?.collector_number || '',
-                                image_uris,
                                 quantity: card.quantity,
                                 condition: 'Near Mint',
                                 language: 'English',
@@ -453,11 +440,38 @@ const Collection = () => {
                                 grade: null,
                                 notes: '',
                                 purchase_price: null,
-                                prices: matchedCard?.prices || {},
                                 game: matchedCard?.game || 'mtg',
                                 addedAt: new Date(),
                                 priceLastUpdated: new Date().toISOString(),
-                              });
+                              };
+
+                              if (matchedCard?.api_id || matchedCard?.id) {
+                                data.api_id = matchedCard.api_id || matchedCard.id;
+                              }
+
+                              if (matchedCard?.rarity) {
+                                data.rarity = matchedCard.rarity;
+                              }
+
+                              if (matchedCard?.collector_number || card.collector_number) {
+                                data.collector_number = matchedCard?.collector_number || card.collector_number;
+                              }
+
+                              if (matchedCard?.image_uris || matchedCard?.images) {
+                                data.image_uris = matchedCard.image_uris
+                                  ? matchedCard.image_uris
+                                  : {
+                                      small: matchedCard.images[0]?.small || '',
+                                      normal: matchedCard.images[0]?.medium || '',
+                                      large: matchedCard.images[0]?.large || '',
+                                    };
+                              }
+
+                              if (matchedCard?.prices) {
+                                data.prices = matchedCard.prices;
+                              }
+
+                              batch.set(docRef, data);
                             });
 
                             await batch.commit();
@@ -495,40 +509,42 @@ const Collection = () => {
                         <p className="text-muted-foreground">Searching...</p>
                       </div>
                      ) : searchResults.length > 0 ? (
-                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto">
-                         {searchResults.map((card) => (
-                           <div key={card.id} className="cursor-pointer" onClick={() => handleCardClick(card)}>
-                             <Card className="p-3 hover:bg-accent transition-colors">
-                               <img 
-                                 src={card.image_uris?.normal || card.images?.[0]?.medium} 
-                                 alt={card.name}
-                                 className="w-full aspect-[2.5/3.5] object-cover rounded mb-2"
-                               />
-                                <h3 className="font-semibold text-sm truncate">{card.name}</h3>
-                                <p className="text-xs text-muted-foreground">{card.set_name}</p>
-                                {card.collector_number && (
-                                  <p className="text-xs text-muted-foreground">#{card.collector_number}</p>
-                                )}
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto">
+                          {searchResults.map((card) => (
+                            <div key={card.id} className="cursor-pointer" onClick={() => handleCardClick(card)}>
+                              <Card className="p-3 hover:bg-accent transition-colors">
+                                <img 
+                                  src={card.image_uris?.normal || card.images?.[0]?.medium} 
+                                  alt={card.name}
+                                  className="w-full aspect-[2.5/3.5] object-cover rounded mb-2"
+                                />
+                                <div className="flex items-center justify-between gap-2">
+                                  <h3 className="font-semibold text-sm truncate">{card.name}</h3>
+                                  <p className="text-xs text-muted-foreground whitespace-nowrap">
+                                    {card.set_name}
+                                    {(card.collector_number || card.number) && ` • #${card.collector_number || card.number}`}
+                                  </p>
+                                </div>
                                 {card.prices && (
-                                 <div className="mt-2 space-y-1">
-                                   {card.prices.usd && (
-                                     <div className="flex justify-between text-xs">
-                                       <span className="text-muted-foreground">Regular:</span>
-                                       <span className="font-semibold">${card.prices.usd.toFixed(2)}</span>
-                                     </div>
-                                   )}
-                                   {card.prices.usd_foil && (
-                                     <div className="flex justify-between text-xs">
-                                       <span className="text-muted-foreground">Foil:</span>
-                                       <span className="font-semibold text-primary">${card.prices.usd_foil.toFixed(2)}</span>
-                                     </div>
-                                   )}
-                                 </div>
-                               )}
-                             </Card>
-                           </div>
-                         ))}
-                       </div>
+                                  <div className="mt-2 space-y-1">
+                                    {card.prices.usd && (
+                                      <div className="flex justify-between text-xs">
+                                        <span className="text-muted-foreground">Regular:</span>
+                                        <span className="font-semibold">${card.prices.usd.toFixed(2)}</span>
+                                      </div>
+                                    )}
+                                    {card.prices.usd_foil && (
+                                      <div className="flex justify-between text-xs">
+                                        <span className="text-muted-foreground">Foil:</span>
+                                        <span className="font-semibold text-primary">${card.prices.usd_foil.toFixed(2)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </Card>
+                            </div>
+                          ))}
+                        </div>
                     ) : (
                       <div className="text-center py-8">
                         <p className="text-muted-foreground">Search for cards to add to your collection</p>
