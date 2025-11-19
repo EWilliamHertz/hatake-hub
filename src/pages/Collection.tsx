@@ -9,11 +9,13 @@ import { CardEditModal } from "@/components/CardEditModal";
 import { BulkEditModal } from "@/components/BulkEditModal";
 import { BulkListForSaleModal } from "@/components/BulkListForSaleModal";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Grid3x3, List, Filter, Plus, Upload, DollarSign, Maximize2, CheckSquare } from "lucide-react";
 import { useCardSearch } from "@/hooks/useCardSearch";
 import { useCurrency } from "@/hooks/useCurrency";
-import { searchScryDex, CardResult } from "@/lib/firebase-functions";
+import { CardResult } from "@/lib/firebase-functions";
+import { parseCSV, processCSVImport, ProcessResult } from "@/lib/csvImport";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -85,18 +87,9 @@ const Collection = () => {
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [isBulkListForSaleOpen, setIsBulkListForSaleOpen] = useState(false);
-  const [csvPreviewCards, setCsvPreviewCards] = useState<Array<{
-    id: string;
-    name: string;
-    quantity: number;
-    set_name: string;
-    set_code?: string;
-    collector_number?: string;
-    scryfall_id?: string;
-    is_foil: boolean;
-    rowIndex: number;
-  }>>([]);
+  const [csvPreviewCards, setCsvPreviewCards] = useState<ProcessResult[]>([]);
   const [isCsvReviewOpen, setIsCsvReviewOpen] = useState(false);
+  const [csvImportStatus, setCsvImportStatus] = useState<Record<number, { status: string; message: string }>>({});
 
   useEffect(() => {
     if (!user) {
@@ -159,236 +152,76 @@ const Collection = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.csv')) {
-      toast.error('Please select a CSV file');
-      return;
-    }
-
     try {
-      const text = await file.text();
-      const lines = text.split('\n').filter(line => line.trim());
-      if (lines.length <= 1) {
-        toast.error('CSV appears to be empty');
-        return;
-      }
-
-      // Parse CSV header
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const nameIndex = headers.findIndex(h => h.includes('name') || h === 'card name');
-      const quantityIndex = headers.findIndex(h => h.includes('quantity') || h.includes('count'));
-      const setCodeIndex = headers.findIndex(
-        (h) => h === 'set code' || h === 'set_code' || h === 'set'
-      );
-      const setNameIndex = headers.findIndex(
-        (h) => h === 'set name' || h === 'set_name' || h.includes('edition')
-      );
-      const collectorNumberIndex = headers.findIndex(
-        (h) => h === 'collector number' || h === 'collector_number' || h === 'number'
-      );
-      const scryfallIdIndex = headers.findIndex(
-        (h) => h === 'scryfall id' || h === 'scryfall_id'
-      );
-      const foilIndex = headers.findIndex(h => h.includes('foil') || h.includes('finish'));
-      const conditionIndex = headers.findIndex(h => h.includes('condition') || h === 'state' || h === 'grade');
-      const languageIndex = headers.findIndex(h => h.includes('language') || h === 'lang');
-
-      if (nameIndex === -1) {
-        toast.error('CSV must have a "Name" or "Card Name" column');
-        return;
-      }
-
-      const parseCsvLine = (line: string): string[] => {
-        const result: string[] = [];
-        let current = '';
-        let inQuotes = false;
-
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-
-          if (char === '"') {
-            if (inQuotes && line[i + 1] === '"') {
-              // Escaped quote
-              current += '"';
-              i++;
-            } else {
-              inQuotes = !inQuotes;
-            }
-          } else if (char === ',' && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-          } else {
-            current += char;
-          }
-        }
-
-        if (current.length > 0) {
-          result.push(current.trim());
-        }
-
-        return result;
-      };
-
-      const parsedCards = lines.slice(1).map((line, idx) => {
-        const cleanedLine = line.replace(/\r/g, "");
-        const values = parseCsvLine(cleanedLine);
-        if (!values.length) return null;
-        const name = values[nameIndex];
-        if (!name) return null;
-
-        const quantityRaw = quantityIndex >= 0 ? values[quantityIndex] : "1";
-        const quantity = parseInt((quantityRaw || "1").replace(/\D/g, ""), 10) || 1;
-        const setCode = setCodeIndex >= 0 ? values[setCodeIndex] : "";
-        const setName = setNameIndex >= 0 ? values[setNameIndex] : "";
-        const collectorNumber = collectorNumberIndex >= 0 ? values[collectorNumberIndex] : "";
-        const scryfallId = scryfallIdIndex >= 0 ? values[scryfallIdIndex] : "";
-        const foilValue = foilIndex >= 0 ? (values[foilIndex] || "").toLowerCase() : "";
-        const isFoil = foilValue.includes("foil") || foilValue.includes("true") || foilValue === "1";
-        const condition = conditionIndex >= 0 ? values[conditionIndex] : "Near Mint";
-        const language = languageIndex >= 0 ? values[languageIndex] : "English";
-
-        return {
-          id: `${name}-${idx}`,
-          name,
-          quantity,
-          set_name: setName,
-          set_code: setCode,
-          collector_number: collectorNumber,
-          scryfall_id: scryfallId,
-          is_foil: isFoil,
-          condition,
-          language,
-          rowIndex: idx + 2,
-        };
-      }).filter(Boolean) as Array<{
-        id: string;
-        name: string;
-        quantity: number;
-        set_name: string;
-        set_code?: string;
-        collector_number?: string;
-        scryfall_id?: string;
-        is_foil: boolean;
-        condition: string;
-        language: string;
-        rowIndex: number;
-      }>;
-
+      // Step 1: Parse CSV using the dedicated helper
+      const parsedCards = await parseCSV(file);
+      
       if (parsedCards.length === 0) {
         toast.error('No valid cards found in CSV');
         return;
       }
 
-      toast.info(`Searching for ${parsedCards.length} cards and fetching prices...`);
+      toast.info(`Parsing complete. Searching for ${parsedCards.length} cards and fetching prices...`);
       
-      // Now fetch full card data including prices from ScryDex API (following GeminiHatake pattern)
-      const cardsWithData: any[] = [];
+      // Step 2: Process CSV import with card lookups
+      const updateCallback = (index: number, status: 'processing' | 'success' | 'error', message: string) => {
+        setCsvImportStatus(prev => ({
+          ...prev,
+          [index]: { status, message }
+        }));
+      };
+
+      const results = await processCSVImport(parsedCards, updateCallback, 'magic');
       
-      for (let i = 0; i < parsedCards.length; i++) {
-        const card = parsedCards[i];
-        
-        try {
-          // Build search query with improved logic (following csv-fixed.js pattern)
-          let searchQuery = `!"${card.name}"`;
-          
-          // Add set information if available
-          if (card.set_code && card.set_code.length > 0) {
-            searchQuery += ` set:${card.set_code.toLowerCase()}`;
-          } else if (card.set_name && card.set_name.length > 0) {
-            searchQuery += ` set:"${card.set_name}"`;
-          }
-          
-          // Add collector number if available
-          if (card.collector_number && card.collector_number.length > 0) {
-            searchQuery += ` cn:${card.collector_number}`;
-          }
-          
-          console.log(`Searching for: ${searchQuery}`);
-          
-          // Search for the card using the API
-          let result = await searchScryDex({
-            query: searchQuery,
-            game: 'magic',
-            limit: 1
-          });
-
-          // If no results with specific query, try name-only search
-          if (!result.success || result.data.length === 0) {
-            console.warn(`Specific query failed for "${card.name}". Trying name-only search.`);
-            result = await searchScryDex({
-              query: `!"${card.name}"`,
-              game: 'magic',
-              limit: 1
-            });
-          }
-
-          // If still no results, try without quotes
-          if (!result.success || result.data.length === 0) {
-            console.warn(`Quoted search failed for "${card.name}". Trying unquoted search.`);
-            result = await searchScryDex({
-              query: card.name,
-              game: 'magic',
-              limit: 1
-            });
-          }
-
-          if (result.success && result.data.length > 0) {
-            const foundCard = result.data[0];
-            
-            // Merge CSV data with found card data
-            cardsWithData.push({
-              ...foundCard,
-              api_id: foundCard.api_id || foundCard.id,
-              image_uris: foundCard.image_uris || (foundCard.images?.[0] ? {
-                small: foundCard.images[0].small,
-                normal: foundCard.images[0].medium,
-                large: foundCard.images[0].large
-              } : { small: '', normal: '', large: '' }),
-              set_name: foundCard.set_name || card.set_name,
-              rarity: foundCard.rarity,
-              game: foundCard.game || 'mtg',
-              prices: {
-                usd: foundCard.prices?.usd || null,
-                usd_foil: foundCard.prices?.usd_foil || null,
-                eur: foundCard.prices?.eur || null,
-                eur_foil: foundCard.prices?.eur_foil || null
-              },
-              // Preserve CSV-specific data
-              quantity: card.quantity,
-              condition: card.condition,
-              language: card.language,
-              is_foil: card.is_foil
-            });
-            
-            console.log(`✓ Found card: ${card.name} with price: €${foundCard.prices?.eur || 'N/A'}`);
-          } else {
-            // Card not found via API, keep parsed data but no prices
-            console.warn(`✗ Card not found: ${card.name}`);
-            cardsWithData.push({
-              ...card,
-              prices: { usd: null, usd_foil: null, eur: null, eur_foil: null }
-            });
-          }
-        } catch (error) {
-          console.error(`Error searching for ${card.name}:`, error);
-          cardsWithData.push({
-            ...card,
-            prices: { usd: null, usd_foil: null, eur: null, eur_foil: null }
-          });
-        }
-        
-        // Small delay to prevent overwhelming the API (following GeminiHatake pattern)
-        await new Promise(resolve => setTimeout(resolve, 150));
-      }
-
-      setCsvPreviewCards(cardsWithData);
+      // Step 3: Show results
+      setCsvPreviewCards(results);
       setIsCsvReviewOpen(true);
       setIsImportDialogOpen(false);
       
-      const cardsWithPrices = cardsWithData.filter(c => c.prices?.usd || c.prices?.eur);
+      const successfulCards = results.filter(r => r.status === 'success');
+      const cardsWithPrices = successfulCards.filter(r => 
+        r.card?.prices?.usd || r.card?.prices?.eur || 
+        r.card?.prices?.usd_foil || r.card?.prices?.eur_foil
+      );
+      
       toast.success(`Found prices for ${cardsWithPrices.length} of ${parsedCards.length} cards`);
     } catch (error) {
       console.error('CSV import error:', error);
-      toast.error('Failed to parse CSV file');
+      toast.error(error instanceof Error ? error.message : 'Failed to parse CSV file');
+    }
+  };
+
+  const handleRemoveFromPreview = (index: number) => {
+    setCsvPreviewCards(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleFinalizeImport = async () => {
+    if (!user || csvPreviewCards.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      const collectionRef = collection(db, `users/${user.uid}/collection`);
+
+      const successfulCards = csvPreviewCards.filter(result => result.status === 'success' && result.card);
+
+      for (const result of successfulCards) {
+        if (!result.card) continue;
+        
+        const cardDoc = doc(collectionRef);
+        batch.set(cardDoc, {
+          ...result.card,
+          addedAt: new Date(),
+        });
+      }
+
+      await batch.commit();
+      toast.success(`Added ${successfulCards.length} cards to your collection`);
+      setCsvPreviewCards([]);
+      setCsvImportStatus({});
+      setIsCsvReviewOpen(false);
+    } catch (error) {
+      console.error('Error importing cards:', error);
+      toast.error('Failed to import cards');
     }
   };
 
@@ -470,7 +303,7 @@ const Collection = () => {
 
               {/* CSV Review Modal */}
               <Dialog open={isCsvReviewOpen} onOpenChange={setIsCsvReviewOpen}>
-                <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Review CSV Import</DialogTitle>
                   </DialogHeader>
@@ -479,171 +312,62 @@ const Collection = () => {
                       {csvPreviewCards.length} cards detected. Remove any you don't want to import, then finalize.
                     </p>
                     <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                      {csvPreviewCards.map((card) => (
-                        <Card key={card.id} className="p-3 flex items-center justify-between gap-3">
-                           <div className="space-y-1">
-                             <p className="font-medium text-sm">{card.name}</p>
-                             {card.set_name && (
-                               <p className="text-xs text-muted-foreground">
-                                 {card.set_name}
-                                 {card.collector_number && ` • #${card.collector_number}`}
-                               </p>
-                             )}
-                             <p className="text-xs text-muted-foreground">
-                               Row {card.rowIndex} • Qty: {card.quantity} • {card.is_foil ? 'Foil' : 'Non-foil'}
-                             </p>
-                           </div>
+                      {csvPreviewCards.map((result, idx) => (
+                        <Card key={idx} className="p-3 flex items-center justify-between gap-3">
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-sm">{result.originalName}</p>
+                              {result.status === 'success' && (
+                                <Badge variant="default" className="text-xs">Found</Badge>
+                              )}
+                              {result.status === 'error' && (
+                                <Badge variant="destructive" className="text-xs">Not found</Badge>
+                              )}
+                              {result.status === 'processing' && (
+                                <Badge variant="secondary" className="text-xs">Searching...</Badge>
+                              )}
+                            </div>
+                            {result.card && (
+                              <>
+                                {result.card.set_name && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {result.card.set_name}
+                                    {result.card.collector_number && ` • #${result.card.collector_number}`}
+                                  </p>
+                                )}
+                                <p className="text-xs text-muted-foreground">
+                                  Row {idx + 2} • Qty: {result.card.quantity} • {result.card.is_foil ? 'Foil' : 'Non-foil'}
+                                </p>
+                                {(result.card.prices?.usd || result.card.prices?.eur) && (
+                                  <p className="text-xs font-medium text-primary">
+                                    ${result.card.prices.usd || '—'} / €{result.card.prices.eur || '—'}
+                                  </p>
+                                )}
+                              </>
+                            )}
+                            {result.error && (
+                              <p className="text-xs text-destructive">{result.error}</p>
+                            )}
+                          </div>
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setCsvPreviewCards(prev => prev.filter(c => c.id !== card.id))}
+                            onClick={() => handleRemoveFromPreview(idx)}
                           >
                             Remove
                           </Button>
                         </Card>
                       ))}
                     </div>
-                    <div className="flex justify-between items-center pt-2">
-                      <p className="text-xs text-muted-foreground">
-                        Only basic info (name, quantity, set, foil) will be saved for unmatched cards. When possible, prices and images will be fetched automatically.
-                      </p>
+                    <div className="flex justify-between items-center pt-2 border-t">
+                      <div className="text-xs text-muted-foreground space-y-1">
+                        <p>Found prices for {csvPreviewCards.filter(r => r.status === 'success' && (r.card?.prices?.usd || r.card?.prices?.eur)).length} of {csvPreviewCards.length} cards</p>
+                      </div>
                       <Button
                         disabled={csvPreviewCards.length === 0}
-                        onClick={async () => {
-                          if (!user) return;
-                          try {
-                            const results = await Promise.all(
-                              csvPreviewCards.map(async (card) => {
-                                try {
-                                  const searchResult = await searchScryDex({
-                                    query: card.name,
-                                    game: 'magic',
-                                    limit: 10,
-                                  });
-
-                                  if (!searchResult.success || !searchResult.data.length) {
-                                    return { card, matchedCard: null };
-                                  }
-
-                                  let matched: CardResult | null = searchResult.data[0];
-
-                                  // Best: match by Scryfall ID (api_id)
-                                  if (card.scryfall_id) {
-                                    const byScryfallId = searchResult.data.find(
-                                      (c) => c.api_id === card.scryfall_id
-                                    );
-                                    if (byScryfallId) {
-                                      matched = byScryfallId;
-                                    }
-                                  }
-
-                                  // Try to match by set code + collector number (most precise)
-                                  if (card.set_code && card.collector_number) {
-                                    const byCodeAndNumber = searchResult.data.find(
-                                      (c) =>
-                                        c.expansion?.id?.toLowerCase() === card.set_code?.toLowerCase() &&
-                                        c.collector_number === card.collector_number
-                                    );
-                                    if (byCodeAndNumber) matched = byCodeAndNumber;
-                                  }
-                                  // Fallback: match by set code only
-                                  else if (card.set_code) {
-                                    const byCode = searchResult.data.find(
-                                      (c) => c.expansion?.id?.toLowerCase() === card.set_code?.toLowerCase()
-                                    );
-                                    if (byCode) matched = byCode;
-                                  }
-                                  // Fallback: match by set name
-                                  else if (card.set_name) {
-                                    const byName = searchResult.data.find(
-                                      (c) => c.set_name?.toLowerCase() === card.set_name.toLowerCase()
-                                    );
-                                    if (byName) matched = byName;
-                                  }
-
-                                  return { card, matchedCard: matched };
-                                } catch (err) {
-                                  console.error('CSV search error for card', card.name, err);
-                                  return { card, matchedCard: null };
-                                }
-                              })
-                            );
-
-                            const batch = writeBatch(db);
-
-                            results.forEach(({ card, matchedCard }) => {
-                              const docRef = doc(collection(db, 'users', user.uid, 'collection'));
-
-                              console.log(`CSV Import - Card: ${card.name}, Matched:`, !!matchedCard, 
-                                matchedCard ? `Set: ${matchedCard.set_name}, Prices:` : 'No match', 
-                                matchedCard?.prices);
-
-                              const data: any = {
-                                name: matchedCard?.name || card.name,
-                                set_name: matchedCard?.set_name || card.set_name,
-                                quantity: card.quantity,
-                                condition: 'Near Mint',
-                                language: 'English',
-                                is_foil: card.is_foil,
-                                is_signed: false,
-                                is_altered: false,
-                                is_graded: false,
-                                grading_company: null,
-                                grade: null,
-                                notes: '',
-                                purchase_price: null,
-                                game: matchedCard?.game || 'mtg',
-                                addedAt: new Date(),
-                                priceLastUpdated: new Date().toISOString(),
-                              };
-
-                              if (matchedCard?.api_id || matchedCard?.id) {
-                                data.api_id = matchedCard.api_id || matchedCard.id;
-                              }
-
-                              if (matchedCard?.rarity) {
-                                data.rarity = matchedCard.rarity;
-                              }
-
-                              if (matchedCard?.collector_number || card.collector_number) {
-                                data.collector_number = matchedCard?.collector_number || card.collector_number;
-                              }
-
-                              if (matchedCard?.image_uris || matchedCard?.images) {
-                                data.image_uris = matchedCard.image_uris
-                                  ? matchedCard.image_uris
-                                  : {
-                                      small: matchedCard.images?.[0]?.small || '',
-                                      normal: matchedCard.images?.[0]?.medium || '',
-                                      large: matchedCard.images?.[0]?.large || '',
-                                    };
-                              }
-
-                              // CRITICAL: Copy prices from matched card
-                              if (matchedCard?.prices) {
-                                console.log(`  -> Copying prices for ${card.name}:`, matchedCard.prices);
-                                data.prices = {
-                                  usd: matchedCard.prices.usd ?? null,
-                                  usd_foil: matchedCard.prices.usd_foil ?? null,
-                                };
-                              } else {
-                                console.warn(`  -> No prices found for ${card.name}`);
-                              }
-
-                              batch.set(docRef, data);
-                            });
-
-                            await batch.commit();
-                            toast.success(`Imported ${csvPreviewCards.length} cards into your collection`);
-                            setCsvPreviewCards([]);
-                            setIsCsvReviewOpen(false);
-                          } catch (error) {
-                            console.error('CSV finalize error:', error);
-                            toast.error('Failed to import cards');
-                          }
-                        }}
+                        onClick={handleFinalizeImport}
                       >
-                        Import {csvPreviewCards.length} Cards
+                        Finalize Import
                       </Button>
                     </div>
                   </div>
