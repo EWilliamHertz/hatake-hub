@@ -73,9 +73,8 @@ export const BulkListForSaleModal = ({
 
   const getMarketPrice = (card: typeof selectedCards[0]) => {
     if (!card.prices) return 0;
-    const usd = card.is_foil ? card.prices.usd_foil ?? null : card.prices.usd ?? null;
-    const eur = card.is_foil ? card.prices.eur_foil ?? null : card.prices.eur ?? null;
-    return usd ?? eur ?? 0;
+    // We store USD prices and convert on the Collection side when needed
+    return card.is_foil ? (card.prices.usd_foil || 0) : (card.prices.usd || 0);
   };
 
   const calculateFinalPrice = (cardId: string, card: typeof selectedCards[0]) => {

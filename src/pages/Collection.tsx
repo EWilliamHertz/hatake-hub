@@ -75,6 +75,12 @@ const Collection = () => {
     return 200;
   });
   const [isResizeOpen, setIsResizeOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('hatake_collection_card_size', String(cardSize));
+    }
+  }, [cardSize]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
@@ -281,11 +287,9 @@ const Collection = () => {
 
   const calculateTotalValue = () => {
     return userCards.reduce((total, card) => {
-      const basePrice = card.is_foil
-        ? card.prices?.usd_foil ?? card.prices?.eur_foil ?? null
-        : card.prices?.usd ?? card.prices?.eur ?? null;
-      const converted = convertPrice(basePrice ?? null) || 0;
-      const cardValue = converted * (card.quantity || 1);
+      const usdPrice = card.is_foil ? card.prices?.usd_foil ?? null : card.prices?.usd ?? null;
+      const converted = convertPrice(usdPrice);
+      const cardValue = (converted || 0) * (card.quantity || 1);
       return total + cardValue;
     }, 0);
   };
@@ -810,9 +814,7 @@ const Collection = () => {
                       imageUrl={card.image_uris?.normal || card.image_uris?.small}
                       isFoil={card.is_foil}
                       price={convertPrice(
-                        (card.is_foil
-                          ? card.prices?.usd_foil ?? card.prices?.eur_foil ?? null
-                          : card.prices?.usd ?? card.prices?.eur ?? null) ?? null
+                        card.is_foil ? card.prices?.usd_foil ?? null : card.prices?.usd ?? null
                       )}
                       currency={currency}
                     />
