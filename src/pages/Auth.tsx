@@ -13,7 +13,8 @@ const Auth = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn, signUp, user } = useAuth();
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const { signIn, signUp, signInWithGoogle, user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -107,7 +108,7 @@ const Auth = () => {
                   placeholder="your@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || googleLoading}
                   required
                 />
               </div>
@@ -120,12 +121,12 @@ const Auth = () => {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
+                  disabled={loading || googleLoading}
                   required
                 />
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading || googleLoading}>
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -136,6 +137,36 @@ const Auth = () => {
                 )}
               </Button>
             </form>
+
+            <div className="mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={googleLoading || loading}
+                onClick={async () => {
+                  setGoogleLoading(true);
+                  const { error } = await signInWithGoogle();
+                  if (error) {
+                    toast.error('Google sign-in failed. Please try again.');
+                    console.error(error);
+                  } else {
+                    toast.success('Signed in with Google');
+                    navigate('/');
+                  }
+                  setGoogleLoading(false);
+                }}
+              >
+                {googleLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Connecting Google...
+                  </>
+                ) : (
+                  'Continue with Google'
+                )}
+              </Button>
+            </div>
           </TabsContent>
 
           <TabsContent value="signup">
