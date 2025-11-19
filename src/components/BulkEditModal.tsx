@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -92,6 +92,7 @@ export const BulkEditModal = ({ open, onOpenChange, selectedCards, onComplete }:
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Bulk Edit {selectedCards.length} Cards</DialogTitle>
+          <DialogDescription>Update multiple cards at once or delete them</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">

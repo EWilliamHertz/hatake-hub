@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -218,6 +218,9 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
           <div className="w-2/3 p-6 flex flex-col overflow-y-auto">
             <DialogHeader className="mb-4">
               <DialogTitle className="text-2xl">{card.name}</DialogTitle>
+              <DialogDescription>
+                {isExistingCard ? 'Update card details and marketplace listing' : 'Add this card to your collection'}
+              </DialogDescription>
               <p className="text-sm text-muted-foreground">{card.set_name}</p>
               {currentPrice && (
                 <p className="text-lg font-bold text-primary">
