@@ -288,6 +288,18 @@ export async function processCSVImport(
 
       if (searchResult.success && searchResult.data && searchResult.data.length > 0) {
         const foundCard = searchResult.data[0];
+        
+        // Log detailed card data for debugging
+        console.log(`✅ [${i+1}/${cards.length}] Found: ${card.name}`);
+        console.log(`   API ID: ${foundCard.api_id || foundCard.id}`);
+        console.log(`   Set: ${foundCard.set_name || 'N/A'}`);
+        console.log(`   Prices:`, {
+          usd: foundCard.prices?.usd || null,
+          usd_foil: foundCard.prices?.usd_foil || null,
+          eur: foundCard.prices?.eur || null,
+          eur_foil: foundCard.prices?.eur_foil || null
+        });
+        console.log(`   Images:`, foundCard.image_uris || foundCard.images?.[0] || 'No images');
 
         // Merge CSV data with found card data
         const cardToImport = {
@@ -315,6 +327,10 @@ export async function processCSVImport(
 
         updateCallback && updateCallback(i, 'success', 'Found');
       } else {
+        console.warn(`❌ [${i+1}/${cards.length}] Not found: ${card.name}`);
+        console.warn(`   Query: ${searchQuery}`);
+        console.warn(`   Game: ${selectedGame}`);
+        
         results.push({
           index: i,
           status: 'error',
@@ -341,6 +357,21 @@ export async function processCSVImport(
     // Small delay to prevent overwhelming the API
     await new Promise(resolve => setTimeout(resolve, 150));
   }
+
+  // Log final summary
+  const successful = results.filter(r => r.status === 'success').length;
+  const failed = results.filter(r => r.status === 'error').length;
+  const withPrices = results.filter(r => 
+    r.status === 'success' && 
+    (r.card?.prices?.usd || r.card?.prices?.eur || r.card?.prices?.usd_foil || r.card?.prices?.eur_foil)
+  ).length;
+  
+  console.log('═══════════════════════════════════════');
+  console.log('CSV IMPORT SUMMARY:');
+  console.log(`✅ Successfully matched: ${successful}/${cards.length} cards`);
+  console.log(`💰 Cards with pricing data: ${withPrices}/${successful}`);
+  console.log(`❌ Failed to match: ${failed}/${cards.length} cards`);
+  console.log('═══════════════════════════════════════');
 
   return results;
 }

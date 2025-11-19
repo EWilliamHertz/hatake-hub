@@ -152,18 +152,30 @@ const Collection = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    console.log('═══════════════════════════════════════');
+    console.log('🚀 STARTING CSV IMPORT');
+    console.log(`📄 File: ${file.name}`);
+    console.log(`📦 Size: ${(file.size / 1024).toFixed(2)} KB`);
+    console.log('═══════════════════════════════════════');
+
     try {
       // Step 1: Parse CSV using the dedicated helper
+      console.log('📋 Step 1: Parsing CSV file...');
       const parsedCards = await parseCSV(file);
       
       if (parsedCards.length === 0) {
+        console.error('❌ No valid cards found in CSV');
         toast.error('No valid cards found in CSV');
         return;
       }
 
+      console.log(`✅ Parsed ${parsedCards.length} cards from CSV`);
+      console.log('Sample parsed cards:', parsedCards.slice(0, 3));
+
       toast.info(`Parsing complete. Searching for ${parsedCards.length} cards and fetching prices...`);
       
       // Step 2: Process CSV import with card lookups
+      console.log('🔍 Step 2: Looking up cards via ScryDex API...');
       const updateCallback = (index: number, status: 'processing' | 'success' | 'error', message: string) => {
         setCsvImportStatus(prev => ({
           ...prev,
@@ -173,20 +185,31 @@ const Collection = () => {
 
       const results = await processCSVImport(parsedCards, updateCallback, 'magic');
       
-      // Step 3: Show results
+      console.log('📊 Step 3: Processing results...');
+      console.log(`Total results: ${results.length}`);
+      
+      const successfulCards = results.filter(r => r.status === 'success');
+      const failedCards = results.filter(r => r.status === 'error');
+      
+      console.log(`✅ Successful: ${successfulCards.length}`);
+      console.log(`❌ Failed: ${failedCards.length}`);
+      
+      if (failedCards.length > 0) {
+        console.log('Failed cards:', failedCards.map(r => r.originalName));
+      }
+      
+      // Show results in UI
       setCsvPreviewCards(results);
       setIsCsvReviewOpen(true);
       setIsImportDialogOpen(false);
       
-      const successfulCards = results.filter(r => r.status === 'success');
-      
-      // Treat every successfully matched card as having usable pricing data,
-      // since ScryDex returns price fields together with the card object.
+      // Treat every successfully matched card as having usable pricing data
       const cardsWithPrices = successfulCards;
       
+      console.log(`💰 Cards with pricing: ${cardsWithPrices.length}`);
       toast.success(`Found prices for ${cardsWithPrices.length} of ${parsedCards.length} cards`);
     } catch (error) {
-      console.error('CSV import error:', error);
+      console.error('💥 CSV import error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to parse CSV file');
     }
   };
@@ -198,29 +221,50 @@ const Collection = () => {
   const handleFinalizeImport = async () => {
     if (!user || csvPreviewCards.length === 0) return;
 
+    console.log('═══════════════════════════════════════');
+    console.log('💾 FINALIZING IMPORT TO FIRESTORE');
+    console.log(`User ID: ${user.uid}`);
+    console.log('═══════════════════════════════════════');
+
     try {
       const batch = writeBatch(db);
       const collectionRef = collection(db, `users/${user.uid}/collection`);
 
       const successfulCards = csvPreviewCards.filter(result => result.status === 'success' && result.card);
+      
+      console.log(`Writing ${successfulCards.length} cards to Firestore...`);
 
       for (const result of successfulCards) {
         if (!result.card) continue;
         
         const cardDoc = doc(collectionRef);
-        batch.set(cardDoc, {
+        const cardData = {
           ...result.card,
           addedAt: new Date(),
-        });
+        };
+        
+        console.log(`  📝 Writing card: ${result.card.name}`);
+        console.log(`     - Prices:`, result.card.prices);
+        console.log(`     - Images:`, result.card.image_uris);
+        console.log(`     - Quantity: ${result.card.quantity}`);
+        console.log(`     - Condition: ${result.card.condition}`);
+        console.log(`     - Foil: ${result.card.is_foil}`);
+        
+        batch.set(cardDoc, cardData);
       }
 
+      console.log('🔄 Committing batch write...');
       await batch.commit();
+      
+      console.log('✅ Firestore write complete!');
+      console.log('═══════════════════════════════════════');
+      
       toast.success(`Added ${successfulCards.length} cards to your collection`);
       setCsvPreviewCards([]);
       setCsvImportStatus({});
       setIsCsvReviewOpen(false);
     } catch (error) {
-      console.error('Error importing cards:', error);
+      console.error('💥 Error importing cards to Firestore:', error);
       toast.error('Failed to import cards');
     }
   };
