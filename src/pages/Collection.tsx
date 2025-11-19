@@ -270,9 +270,70 @@ const Collection = () => {
         return;
       }
 
-      setCsvPreviewCards(parsedCards);
+      toast.info(`Searching for ${parsedCards.length} cards and fetching prices...`);
+      
+      // Now fetch full card data including prices from ScryDex API
+      const cardsWithData: any[] = [];
+      
+      for (const parsed of parsedCards) {
+        try {
+          // Build search query based on available info
+          let searchQuery = `!"${parsed.name}"`;
+          if (parsed.collector_number && parsed.set_code) {
+            searchQuery = `!"${parsed.name}" set:${parsed.set_code} number:${parsed.collector_number}`;
+          } else if (parsed.set_code) {
+            searchQuery = `!"${parsed.name}" set:${parsed.set_code}`;
+          }
+          
+          const result = await searchScryDex({
+            query: searchQuery,
+            game: 'magic',
+            limit: 1
+          });
+
+          if (result.success && result.data.length > 0) {
+            const card = result.data[0];
+            
+            cardsWithData.push({
+              ...parsed,
+              api_id: card.api_id || card.id,
+              image_uris: card.image_uris || (card.images?.[0] ? {
+                small: card.images[0].small,
+                normal: card.images[0].medium,
+                large: card.images[0].large
+              } : { small: '', normal: '', large: '' }),
+              set_name: card.set_name || parsed.set_name,
+              rarity: card.rarity,
+              game: card.game || 'mtg',
+              prices: {
+                usd: card.prices?.usd || null,
+                usd_foil: card.prices?.usd_foil || null,
+                eur: card.prices?.eur || null,
+                eur_foil: card.prices?.eur_foil || null
+              }
+            });
+          } else {
+            // Card not found via API, keep parsed data but no prices
+            cardsWithData.push({
+              ...parsed,
+              prices: { usd: null, usd_foil: null, eur: null, eur_foil: null }
+            });
+          }
+        } catch (error) {
+          console.error(`Error searching for ${parsed.name}:`, error);
+          cardsWithData.push({
+            ...parsed,
+            prices: { usd: null, usd_foil: null, eur: null, eur_foil: null }
+          });
+        }
+      }
+
+      setCsvPreviewCards(cardsWithData);
       setIsCsvReviewOpen(true);
       setIsImportDialogOpen(false);
+      
+      const cardsWithPrices = cardsWithData.filter(c => c.prices?.usd || c.prices?.eur);
+      toast.success(`Found ${cardsWithPrices.length} of ${parsedCards.length} cards with pricing data`);
     } catch (error) {
       console.error('CSV import error:', error);
       toast.error('Failed to parse CSV file');
