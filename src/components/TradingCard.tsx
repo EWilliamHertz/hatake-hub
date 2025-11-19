@@ -1,6 +1,7 @@
 import { Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { Currency } from "@/hooks/useCurrency";
 
 interface TradingCardProps {
   id: string;
@@ -10,7 +11,7 @@ interface TradingCardProps {
   imageUrl?: string;
   isFoil?: boolean;
   price?: number | null;
-  currency?: 'usd' | 'eur';
+  currency?: Currency;
   className?: string;
 }
 
@@ -21,7 +22,7 @@ export const TradingCard = ({
   imageUrl,
   isFoil = false,
   price,
-  currency = 'usd',
+  currency = 'USD',
   className,
 }: TradingCardProps) => {
   return (
@@ -74,7 +75,7 @@ export const TradingCard = ({
         </div>
         {price !== undefined && price !== null && (
           <div className="text-sm font-semibold text-primary">
-            {currency === 'usd' ? '$' : '€'}{price.toFixed(2)}
+            {currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'DKK' || currency === 'SEK' ? 'kr' : '$'}{price.toFixed(2)}
           </div>
         )}
       </div>

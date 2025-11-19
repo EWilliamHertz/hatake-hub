@@ -6,13 +6,16 @@ import { db } from "@/lib/firebase";
 import { TradingCard } from "@/components/TradingCard";
 import { CardSearchBar } from "@/components/CardSearchBar";
 import { CardEditModal } from "@/components/CardEditModal";
+import { BulkEditModal } from "@/components/BulkEditModal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Grid3x3, List, Filter, Plus, Upload, DollarSign } from "lucide-react";
+import { Grid3x3, List, Filter, Plus, Upload, DollarSign, Maximize2, CheckSquare } from "lucide-react";
 import { useCardSearch } from "@/hooks/useCardSearch";
 import { useCurrency } from "@/hooks/useCurrency";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import {
   Select,
@@ -46,7 +49,7 @@ interface UserCard {
 const Collection = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { currency, setCurrency, convertPrice } = useCurrency();
+  const { currency, setCurrency, convertPrice, formatPrice } = useCurrency();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedSet, setSelectedSet] = useState<string>("all");
   const [selectedRarity, setSelectedRarity] = useState<string>("all");
@@ -59,6 +62,11 @@ const Collection = () => {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const { cards: searchResults, loading: searchLoading, search } = useCardSearch();
   const [uniqueSets, setUniqueSets] = useState<string[]>([]);
+  const [cardSize, setCardSize] = useState<number>(200);
+  const [isResizeOpen, setIsResizeOpen] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -200,29 +208,24 @@ const Collection = () => {
                 <div className="flex items-center gap-2 mt-1">
                   <DollarSign className="h-4 w-4 text-primary" />
                   <p className="text-lg font-bold text-primary">
-                    {currency === 'usd' ? '$' : '€'}{convertedValue.toFixed(2)}
+                    {formatPrice(convertedValue)}
                   </p>
                 </div>
               )}
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex gap-1">
-                <Button
-                  variant={currency === 'usd' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setCurrency('usd')}
-                >
-                  USD
-                </Button>
-                <Button
-                  variant={currency === 'eur' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setCurrency('eur')}
-                >
-                  EUR
-                </Button>
-              </div>
+              <Select value={currency} onValueChange={(val) => setCurrency(val as any)}>
+                <SelectTrigger className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                  <SelectItem value="DKK">DKK</SelectItem>
+                  <SelectItem value="SEK">SEK</SelectItem>
+                </SelectContent>
+              </Select>
 
               <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
                 <DialogTrigger asChild>
@@ -364,6 +367,75 @@ const Collection = () => {
                 <SelectItem value="mythic">Mythic</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Resize Control */}
+            {viewMode === "grid" && (
+              <Dialog open={isResizeOpen} onOpenChange={setIsResizeOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <Maximize2 className="h-4 w-4" />
+                    Resize
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Adjust Card Size</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <label className="text-sm text-muted-foreground">
+                        Card Size: {cardSize}px
+                      </label>
+                      <Slider
+                        value={[cardSize]}
+                        onValueChange={(val) => setCardSize(val[0])}
+                        min={120}
+                        max={320}
+                        step={20}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <Button onClick={() => setIsResizeOpen(false)}>Done</Button>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+
+            {/* Selection & Bulk Edit */}
+            {!selectionMode ? (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-2"
+                onClick={() => setSelectionMode(true)}
+              >
+                <CheckSquare className="h-4 w-4" />
+                Select
+              </Button>
+            ) : (
+              <>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    setSelectionMode(false);
+                    setSelectedCardIds(new Set());
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="sm"
+                  disabled={selectedCardIds.size === 0}
+                  onClick={() => setIsBulkEditOpen(true)}
+                >
+                  Edit {selectedCardIds.size} Cards
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -388,33 +460,64 @@ const Collection = () => {
             </Button>
           </div>
         ) : (
-          <div className={
-            viewMode === "grid"
-              ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
-              : "space-y-2"
-          }>
+          <div>
             {viewMode === "grid" ? (
-              filteredCards.map((card) => (
-                <div 
-                  key={card.id} 
-                  className="cursor-pointer" 
-                  onClick={() => {
-                    setSelectedCard(card);
-                    setIsCardDetailOpen(true);
-                  }}
-                >
-                  <TradingCard
-                    id={card.id}
-                    name={card.name}
-                    set={card.set_name}
-                    rarity={card.rarity}
-                    imageUrl={card.image_uris?.normal || card.image_uris?.small}
-                    isFoil={card.is_foil}
-                    price={convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd)}
-                    currency={currency}
-                  />
-                </div>
-              ))
+              <div 
+                className="grid gap-4"
+                style={{
+                  gridTemplateColumns: `repeat(auto-fill, minmax(${cardSize}px, 1fr))`
+                }}
+              >
+                {filteredCards.map((card) => (
+                  <div 
+                    key={card.id} 
+                    className="relative cursor-pointer" 
+                    onClick={(e) => {
+                      if (selectionMode) {
+                        e.stopPropagation();
+                        const newSelected = new Set(selectedCardIds);
+                        if (newSelected.has(card.id)) {
+                          newSelected.delete(card.id);
+                        } else {
+                          newSelected.add(card.id);
+                        }
+                        setSelectedCardIds(newSelected);
+                      } else {
+                        setSelectedCard(card);
+                        setIsCardDetailOpen(true);
+                      }
+                    }}
+                  >
+                    {selectionMode && (
+                      <div className="absolute top-2 left-2 z-10">
+                        <Checkbox
+                          checked={selectedCardIds.has(card.id)}
+                          onCheckedChange={(checked) => {
+                            const newSelected = new Set(selectedCardIds);
+                            if (checked) {
+                              newSelected.add(card.id);
+                            } else {
+                              newSelected.delete(card.id);
+                            }
+                            setSelectedCardIds(newSelected);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    )}
+                    <TradingCard
+                      id={card.id}
+                      name={card.name}
+                      set={card.set_name}
+                      rarity={card.rarity}
+                      imageUrl={card.image_uris?.normal || card.image_uris?.small}
+                      isFoil={card.is_foil}
+                      price={convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd)}
+                      currency={currency}
+                    />
+                  </div>
+                ))}
+              </div>
             ) : (
               filteredCards.map((card) => (
                 <Card 
@@ -463,8 +566,7 @@ const Collection = () => {
                     <div className="flex items-center gap-4">
                       {convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd) && (
                         <span className="text-sm font-bold text-primary">
-                          {currency === 'usd' ? '$' : '€'}
-                          {convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd)?.toFixed(2)}
+                          {formatPrice(convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd) as number)}
                         </span>
                       )}
                       <span className="text-sm text-muted-foreground">x{card.quantity || 1}</span>
@@ -476,6 +578,20 @@ const Collection = () => {
           </div>
         )}
       </div>
+
+      {/* Bulk Edit Modal */}
+      <BulkEditModal
+        open={isBulkEditOpen}
+        onOpenChange={setIsBulkEditOpen}
+        selectedCards={Array.from(selectedCardIds).map(id => {
+          const card = userCards.find(c => c.id === id);
+          return { id, name: card?.name || '' };
+        })}
+        onComplete={() => {
+          setSelectedCardIds(new Set());
+          setSelectionMode(false);
+        }}
+      />
     </div>
   );
 };
