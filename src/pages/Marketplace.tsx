@@ -15,7 +15,11 @@ interface MarketplaceListing {
     name: string;
     set_name: string;
     rarity: string;
-    image_uris?: { normal: string };
+    image_uris?: {
+      small: string;
+      normal: string;
+      large: string;
+    };
   };
   sellerId: string;
   sellerData: {
@@ -114,7 +118,7 @@ const Marketplace = () => {
                     name={listing.cardData.name}
                     set={listing.cardData.set_name}
                     rarity={listing.cardData.rarity}
-                    imageUrl={listing.cardData.image_uris?.normal || ''}
+                    imageUrl={listing.cardData.image_uris?.normal || listing.cardData.image_uris?.small}
                     isFoil={listing.isFoil}
                   />
                 </div>
