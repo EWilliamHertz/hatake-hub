@@ -63,6 +63,27 @@ const Messenger = () => {
       return;
     }
 
+    // Ensure current user has a profile in Firestore
+    const ensureUserProfile = async () => {
+      try {
+        const userDocRef = doc(db, "users", user.uid);
+        const userDoc = await getDoc(userDocRef);
+        if (!userDoc.exists()) {
+          console.log("Creating user profile for:", user.uid);
+          await setDoc(userDocRef, {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName || user.email?.split('@')[0] || 'User',
+            photoURL: user.photoURL || '',
+            createdAt: new Date(),
+          });
+        }
+      } catch (error) {
+        console.error("Error ensuring user profile:", error);
+      }
+    };
+    ensureUserProfile();
+
     const chatsRef = collection(db, "chats");
     const q = query(chatsRef, where("participants", "array-contains", user.uid));
 
@@ -82,7 +103,7 @@ const Messenger = () => {
             const userDoc = await getDoc(doc(db, "users", otherUserId));
             if (userDoc.exists()) {
               const userData = userDoc.data();
-              otherUserName = userData.displayName || "Unknown";
+              otherUserName = userData.displayName || userData.email?.split('@')[0] || "Unknown";
               otherUserPhotoURL = userData.photoURL || "";
             }
           } catch (err) {
@@ -136,14 +157,14 @@ const Messenger = () => {
     if (!user) return;
     
     try {
+      console.log("Loading users from Firestore...");
       const usersSnapshot = await getDocs(collection(db, "users"));
       const allUsers: UserProfile[] = [];
       
       usersSnapshot.forEach((doc) => {
         const data = doc.data() as any;
         if (doc.id !== user.uid) {
-          const alias = (data.alias || data.username || "") as string;
-          const displayName = (alias || data.displayName || "Unknown") as string;
+          const displayName = data.displayName || data.email?.split('@')[0] || "Unknown";
           allUsers.push({
             uid: doc.id,
             displayName,
@@ -153,6 +174,7 @@ const Messenger = () => {
         }
       });
       
+      console.log(`Loaded ${allUsers.length} users:`, allUsers.map(u => u.displayName));
       setUsers(allUsers);
     } catch (err) {
       console.error("Error loading users:", err);
@@ -236,7 +258,15 @@ const Messenger = () => {
     }
   };
 
+  // Load all users on component mount for easier search
+  useEffect(() => {
+    if (user) {
+      loadUsers();
+    }
+  }, [user]);
+
   const filteredUsers = users.filter((u) => {
+    if (!searchQuery.trim()) return true; // Show all users when no search query
     const haystack = `${u.displayName} ${u.email}`.toLowerCase();
     return haystack.includes(searchQuery.toLowerCase().trim());
   });
@@ -250,7 +280,6 @@ const Messenger = () => {
           <Dialog open={isNewChatOpen} onOpenChange={(open) => {
             setIsNewChatOpen(open);
             setSearchQuery("");
-            if (open) loadUsers();
           }}>
             <DialogTrigger asChild>
               <Button size="sm" variant="ghost">
