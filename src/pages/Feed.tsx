@@ -62,10 +62,12 @@ const Feed = () => {
     navigate('/auth');
   };
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(n => n[0])
+  const getInitials = (name?: string | null) => {
+    if (!name || typeof name !== 'string') return '?';
+    const parts = name.trim().split(' ').filter(Boolean);
+    if (parts.length === 0) return '?';
+    return parts
+      .map((n) => n[0])
       .join('')
       .toUpperCase()
       .slice(0, 2);

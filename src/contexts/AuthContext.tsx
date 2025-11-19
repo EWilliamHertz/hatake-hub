@@ -4,7 +4,9 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
@@ -13,6 +15,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -51,16 +54,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const signOut = async () => {
+  const signInWithGoogle = async () => {
     try {
-      await firebaseSignOut(auth);
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      return { error: null };
     } catch (error) {
-      console.error('Sign out error:', error);
+      console.error('Google sign in error:', error);
+      return { error: error as Error };
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        signIn,
+        signUp,
+        signInWithGoogle,
+        signOut: async () => {
+          try {
+            await firebaseSignOut(auth);
+          } catch (error) {
+            console.error('Sign out error:', error);
+          }
+        },
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
