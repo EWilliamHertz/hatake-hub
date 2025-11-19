@@ -74,6 +74,7 @@ const Collection = () => {
     quantity: number;
     set_name: string;
     set_code?: string;
+    collector_number?: string;
     is_foil: boolean;
     rowIndex: number;
   }>>([]);
@@ -163,6 +164,9 @@ const Collection = () => {
       const setNameIndex = headers.findIndex(
         (h) => h === 'set name' || h === 'set_name' || h.includes('edition')
       );
+      const collectorNumberIndex = headers.findIndex(
+        (h) => h === 'collector number' || h === 'collector_number' || h === 'number'
+      );
       const foilIndex = headers.findIndex(h => h.includes('foil') || h.includes('finish'));
 
       if (nameIndex === -1) {
@@ -212,6 +216,7 @@ const Collection = () => {
         const quantity = parseInt((quantityRaw || "1").replace(/\D/g, ""), 10) || 1;
         const setCode = setCodeIndex >= 0 ? values[setCodeIndex] : "";
         const setName = setNameIndex >= 0 ? values[setNameIndex] : "";
+        const collectorNumber = collectorNumberIndex >= 0 ? values[collectorNumberIndex] : "";
         const foilValue = foilIndex >= 0 ? (values[foilIndex] || "").toLowerCase() : "";
         const isFoil = foilValue.includes("foil");
 
@@ -221,6 +226,7 @@ const Collection = () => {
           quantity,
           set_name: setName,
           set_code: setCode,
+          collector_number: collectorNumber,
           is_foil: isFoil,
           rowIndex: idx + 2,
         };
@@ -230,6 +236,7 @@ const Collection = () => {
         quantity: number;
         set_name: string;
         set_code?: string;
+        collector_number?: string;
         is_foil: boolean;
         rowIndex: number;
       }>;
@@ -336,15 +343,18 @@ const Collection = () => {
                     <div className="space-y-2 max-h-[400px] overflow-y-auto">
                       {csvPreviewCards.map((card) => (
                         <Card key={card.id} className="p-3 flex items-center justify-between gap-3">
-                          <div className="space-y-1">
-                            <p className="font-medium text-sm">{card.name}</p>
-                            {card.set_name && (
-                              <p className="text-xs text-muted-foreground">{card.set_name}</p>
-                            )}
-                            <p className="text-xs text-muted-foreground">
-                              Row {card.rowIndex} • Qty: {card.quantity} • {card.is_foil ? 'Foil' : 'Non-foil'}
-                            </p>
-                          </div>
+                           <div className="space-y-1">
+                             <p className="font-medium text-sm">{card.name}</p>
+                             {card.set_name && (
+                               <p className="text-xs text-muted-foreground">
+                                 {card.set_name}
+                                 {card.collector_number && ` • #${card.collector_number}`}
+                               </p>
+                             )}
+                             <p className="text-xs text-muted-foreground">
+                               Row {card.rowIndex} • Qty: {card.quantity} • {card.is_foil ? 'Foil' : 'Non-foil'}
+                             </p>
+                           </div>
                           <Button
                             variant="outline"
                             size="sm"
@@ -379,12 +389,24 @@ const Collection = () => {
 
                                   let matched: CardResult | null = searchResult.data[0];
 
-                                  if (card.set_code) {
+                                  // Try to match by set code + collector number (most precise)
+                                  if (card.set_code && card.collector_number) {
+                                    const byCodeAndNumber = searchResult.data.find(
+                                      (c) =>
+                                        c.expansion?.id?.toLowerCase() === card.set_code?.toLowerCase() &&
+                                        c.collector_number === card.collector_number
+                                    );
+                                    if (byCodeAndNumber) matched = byCodeAndNumber;
+                                  }
+                                  // Fallback: match by set code only
+                                  else if (card.set_code) {
                                     const byCode = searchResult.data.find(
                                       (c) => c.expansion?.id?.toLowerCase() === card.set_code?.toLowerCase()
                                     );
                                     if (byCode) matched = byCode;
-                                  } else if (card.set_name) {
+                                  }
+                                  // Fallback: match by set name
+                                  else if (card.set_name) {
                                     const byName = searchResult.data.find(
                                       (c) => c.set_name?.toLowerCase() === card.set_name.toLowerCase()
                                     );
@@ -482,9 +504,12 @@ const Collection = () => {
                                  alt={card.name}
                                  className="w-full aspect-[2.5/3.5] object-cover rounded mb-2"
                                />
-                               <h3 className="font-semibold text-sm truncate">{card.name}</h3>
-                               <p className="text-xs text-muted-foreground">{card.set_name}</p>
-                               {card.prices && (
+                                <h3 className="font-semibold text-sm truncate">{card.name}</h3>
+                                <p className="text-xs text-muted-foreground">{card.set_name}</p>
+                                {card.collector_number && (
+                                  <p className="text-xs text-muted-foreground">#{card.collector_number}</p>
+                                )}
+                                {card.prices && (
                                  <div className="mt-2 space-y-1">
                                    {card.prices.usd && (
                                      <div className="flex justify-between text-xs">
