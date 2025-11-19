@@ -24,11 +24,16 @@ interface UserCard {
   name: string;
   set_name: string;
   rarity: string;
-  image_url: string;
-  is_foil: boolean;
+  image_uris?: {
+    small: string;
+    normal: string;
+    large: string;
+  };
+  is_foil?: boolean;
+  quantity?: number;
+  game?: string;
+  collector_number?: string;
   condition?: string;
-  forSale?: boolean;
-  salePrice?: number;
 }
 
 const Collection = () => {
@@ -58,7 +63,19 @@ const Collection = () => {
       (snapshot) => {
         const cards: UserCard[] = [];
         snapshot.forEach((doc) => {
-          cards.push({ id: doc.id, ...doc.data() } as UserCard);
+          const data = doc.data();
+          cards.push({
+            id: doc.id,
+            name: data.name || '',
+            set_name: data.set_name || '',
+            rarity: data.rarity || '',
+            image_uris: data.image_uris,
+            is_foil: data.is_foil || false,
+            quantity: data.quantity || 1,
+            game: data.game,
+            collector_number: data.collector_number,
+            condition: data.condition
+          });
         });
         setUserCards(cards);
         setLoading(false);
@@ -208,7 +225,7 @@ const Collection = () => {
                 name={card.name}
                 set={card.set_name}
                 rarity={card.rarity}
-                imageUrl={card.image_url}
+                imageUrl={card.image_uris?.normal || card.image_uris?.small}
                 isFoil={card.is_foil}
                 className={viewMode === "list" ? "flex" : ""}
               />

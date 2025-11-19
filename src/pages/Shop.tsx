@@ -11,11 +11,13 @@ import { Badge } from "@/components/ui/badge";
 interface Product {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   price: number;
   stock: number;
-  images: string[];
-  category: string;
+  galleryImageUrls?: string[];
+  category?: string;
+  stripePriceId?: string;
+  stripeProductId?: string;
 }
 
 const Shop = () => {
@@ -40,7 +42,18 @@ const Shop = () => {
       (snapshot) => {
         const productsData: Product[] = [];
         snapshot.forEach((doc) => {
-          productsData.push({ id: doc.id, ...doc.data() } as Product);
+          const data = doc.data();
+          productsData.push({
+            id: doc.id,
+            name: data.name || '',
+            description: data.description,
+            price: data.price || 0,
+            stock: data.stock || 0,
+            galleryImageUrls: Array.isArray(data.galleryImageUrls) ? data.galleryImageUrls : [],
+            category: data.category,
+            stripePriceId: data.stripePriceId,
+            stripeProductId: data.stripeProductId
+          });
         });
         setProducts(productsData);
         setLoading(false);
@@ -96,11 +109,15 @@ const Shop = () => {
               <Card key={product.id} className="overflow-hidden">
                 {/* Product Image */}
                 <div className="aspect-square bg-muted relative">
-                  {product.images && product.images[0] ? (
+                  {product.galleryImageUrls && product.galleryImageUrls.length > 0 ? (
                     <img
-                      src={product.images[0]}
+                      src={product.galleryImageUrls[0]}
                       alt={product.name}
+                      loading="lazy"
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">

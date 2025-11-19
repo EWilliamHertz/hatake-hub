@@ -13,11 +13,18 @@ interface Post {
   id: string;
   content: string;
   authorId: string;
-  authorName: string;
-  authorPhoto?: string;
+  author: string;
+  authorPhotoURL?: string;
   timestamp: Timestamp | Date;
-  likes: number;
-  comments: number;
+  likes: string[];
+  comments: Array<{
+    author: string;
+    authorId: string;
+    authorPhotoURL?: string;
+    content: string;
+    timestamp: Timestamp;
+  }>;
+  hashtags?: string[];
 }
 
 const Feed = () => {
@@ -42,32 +49,19 @@ const Feed = () => {
       (snapshot) => {
         const postsData: Post[] = [];
         snapshot.forEach((doc) => {
-          const data = doc.data() as any;
-
-          const normalizedPost: Post = {
+          const data = doc.data();
+          
+          postsData.push({
             id: doc.id,
-            content: typeof data.content === 'string' ? data.content : '',
-            authorId: typeof data.authorId === 'string' ? data.authorId : data.author?.uid || '',
-            authorName:
-              typeof data.authorName === 'string'
-                ? data.authorName
-                : typeof data.author?.displayName === 'string'
-                  ? data.author.displayName
-                  : 'Unknown',
-            authorPhoto:
-              typeof data.authorPhoto === 'string'
-                ? data.authorPhoto
-                : typeof data.authorPhotoURL === 'string'
-                  ? data.authorPhotoURL
-                  : typeof data.author?.photoURL === 'string'
-                    ? data.author.photoURL
-                    : undefined,
+            content: data.content || '',
+            authorId: data.authorId || '',
+            author: data.author || 'Unknown',
+            authorPhotoURL: data.authorPhotoURL,
             timestamp: data.timestamp || new Date(),
-            likes: typeof data.likes === 'number' ? data.likes : 0,
-            comments: typeof data.comments === 'number' ? data.comments : 0,
-          };
-
-          postsData.push(normalizedPost);
+            likes: Array.isArray(data.likes) ? data.likes : [],
+            comments: Array.isArray(data.comments) ? data.comments : [],
+            hashtags: Array.isArray(data.hashtags) ? data.hashtags : []
+          });
         });
         setPosts(postsData);
         setLoading(false);
@@ -142,13 +136,13 @@ const Feed = () => {
               {/* Post Header */}
               <div className="flex items-center gap-3 mb-3">
                 <Avatar>
-                  <AvatarImage src={post.authorPhoto} />
+                  <AvatarImage src={post.authorPhotoURL} />
                   <AvatarFallback className="bg-primary text-primary-foreground">
-                    {getInitials(post.authorName)}
+                    {getInitials(post.author)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-sm">{post.authorName}</h3>
+                  <h3 className="font-semibold text-sm">{post.author}</h3>
                   <p className="text-xs text-muted-foreground">
                     {post.timestamp instanceof Timestamp 
                       ? post.timestamp.toDate().toLocaleDateString()
@@ -158,17 +152,20 @@ const Feed = () => {
               </div>
 
               {/* Post Content */}
-              <p className="text-sm mb-4">{post.content}</p>
+              <div 
+                className="text-sm mb-4 prose prose-sm dark:prose-invert max-w-none"
+                dangerouslySetInnerHTML={{ __html: post.content }}
+              />
 
               {/* Post Actions */}
               <div className="flex items-center gap-4 pt-3 border-t border-border">
                 <Button variant="ghost" size="sm" className="gap-2">
                   <Heart className="h-4 w-4" />
-                  <span className="text-xs">{post.likes || 0}</span>
+                  <span className="text-xs">{post.likes.length || 0}</span>
                 </Button>
                 <Button variant="ghost" size="sm" className="gap-2">
                   <MessageCircle className="h-4 w-4" />
-                  <span className="text-xs">{post.comments || 0}</span>
+                  <span className="text-xs">{post.comments.length || 0}</span>
                 </Button>
                 <Button variant="ghost" size="sm" className="ml-auto">
                   <Share2 className="h-4 w-4" />
