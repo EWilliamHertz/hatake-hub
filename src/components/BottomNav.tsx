@@ -1,4 +1,4 @@
-import { Home, Library, Layers, ShoppingBag, Store } from "lucide-react";
+import { Home, Library, Layers, ShoppingBag, Store, MessageCircle } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 
 const navigation = [
@@ -6,6 +6,7 @@ const navigation = [
   { name: "Collection", href: "/collection", icon: Library },
   { name: "Decks", href: "/deck-builder", icon: Layers },
   { name: "Market", href: "/marketplace", icon: ShoppingBag },
+  { name: "Messenger", href: "/messages", icon: MessageCircle },
   { name: "Shop", href: "/shop", icon: Store },
 ];
 
