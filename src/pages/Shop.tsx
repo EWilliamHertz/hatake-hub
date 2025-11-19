@@ -2,15 +2,13 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { db, functions } from "@/lib/firebase";
+import { httpsCallable } from "firebase/functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ShoppingCart, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { loadStripe } from '@stripe/stripe-js';
-
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
 
 interface Product {
   id: string;
@@ -82,19 +80,15 @@ const Shop = () => {
 
     setCheckoutLoading(product.id);
     try {
-      // Call Firebase function to create checkout session
-      const response = await fetch('https://us-central1-hatakesocial-88b5e.cloudfunctions.net/createStripeCheckout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          priceId: product.stripePriceId,
-          quantity: 1,
-          successUrl: window.location.origin + '/shop?success=true',
-          cancelUrl: window.location.origin + '/shop?canceled=true',
-        }),
+      const createCheckout = httpsCallable(functions, 'createStripeCheckout');
+      const result = await createCheckout({
+        priceId: product.stripePriceId,
+        quantity: 1,
+        successUrl: window.location.origin + '/shop?success=true',
+        cancelUrl: window.location.origin + '/shop?canceled=true',
       });
 
-      const session = await response.json();
+      const session = result.data as any;
       
       if (session.error) {
         throw new Error(session.error);

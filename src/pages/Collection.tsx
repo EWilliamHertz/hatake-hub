@@ -5,7 +5,7 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { TradingCard } from "@/components/TradingCard";
 import { CardSearchBar } from "@/components/CardSearchBar";
-import { CardDetailModal } from "@/components/CardDetailModal";
+import { CardEditModal } from "@/components/CardEditModal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Grid3x3, List, Filter, Plus, Upload, DollarSign } from "lucide-react";
@@ -265,21 +265,38 @@ const Collection = () => {
                       <div className="text-center py-8">
                         <p className="text-muted-foreground">Searching...</p>
                       </div>
-                    ) : searchResults.length > 0 ? (
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto">
-                        {searchResults.map((card) => (
-                          <div key={card.id} className="cursor-pointer" onClick={() => handleCardClick(card)}>
-                            <TradingCard
-                              id={card.id}
-                              name={card.name}
-                              set={card.set_name}
-                              rarity={card.rarity}
-                              imageUrl={card.image_uris?.normal || card.images?.[0]?.medium}
-                              isFoil={false}
-                            />
-                          </div>
-                        ))}
-                      </div>
+                     ) : searchResults.length > 0 ? (
+                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto">
+                         {searchResults.map((card) => (
+                           <div key={card.id} className="cursor-pointer" onClick={() => handleCardClick(card)}>
+                             <Card className="p-3 hover:bg-accent transition-colors">
+                               <img 
+                                 src={card.image_uris?.normal || card.images?.[0]?.medium} 
+                                 alt={card.name}
+                                 className="w-full aspect-[2.5/3.5] object-cover rounded mb-2"
+                               />
+                               <h3 className="font-semibold text-sm truncate">{card.name}</h3>
+                               <p className="text-xs text-muted-foreground">{card.set_name}</p>
+                               {card.prices && (
+                                 <div className="mt-2 space-y-1">
+                                   {card.prices.usd && (
+                                     <div className="flex justify-between text-xs">
+                                       <span className="text-muted-foreground">Regular:</span>
+                                       <span className="font-semibold">${card.prices.usd.toFixed(2)}</span>
+                                     </div>
+                                   )}
+                                   {card.prices.usd_foil && (
+                                     <div className="flex justify-between text-xs">
+                                       <span className="text-muted-foreground">Foil:</span>
+                                       <span className="font-semibold text-primary">${card.prices.usd_foil.toFixed(2)}</span>
+                                     </div>
+                                   )}
+                                 </div>
+                               )}
+                             </Card>
+                           </div>
+                         ))}
+                       </div>
                     ) : (
                       <div className="text-center py-8">
                         <p className="text-muted-foreground">Search for cards to add to your collection</p>
@@ -290,10 +307,14 @@ const Collection = () => {
               </Dialog>
             </div>
 
-            <CardDetailModal
+            <CardEditModal
               open={isCardDetailOpen}
-              onOpenChange={setIsCardDetailOpen}
+              onOpenChange={(open) => {
+                setIsCardDetailOpen(open);
+                if (!open) setSelectedCard(null);
+              }}
               card={selectedCard}
+              isExistingCard={!!selectedCard?.quantity}
             />
           </div>
           
@@ -370,22 +391,88 @@ const Collection = () => {
           <div className={
             viewMode === "grid"
               ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
-              : "space-y-3"
+              : "space-y-2"
           }>
-            {filteredCards.map((card) => (
-              <TradingCard
-                key={card.id}
-                id={card.id}
-                name={card.name}
-                set={card.set_name}
-                rarity={card.rarity}
-                imageUrl={card.image_uris?.normal || card.image_uris?.small}
-                isFoil={card.is_foil}
-                price={convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd)}
-                currency={currency}
-                className={viewMode === "list" ? "flex" : ""}
-              />
-            ))}
+            {viewMode === "grid" ? (
+              filteredCards.map((card) => (
+                <div 
+                  key={card.id} 
+                  className="cursor-pointer" 
+                  onClick={() => {
+                    setSelectedCard(card);
+                    setIsCardDetailOpen(true);
+                  }}
+                >
+                  <TradingCard
+                    id={card.id}
+                    name={card.name}
+                    set={card.set_name}
+                    rarity={card.rarity}
+                    imageUrl={card.image_uris?.normal || card.image_uris?.small}
+                    isFoil={card.is_foil}
+                    price={convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd)}
+                    currency={currency}
+                  />
+                </div>
+              ))
+            ) : (
+              filteredCards.map((card) => (
+                <Card 
+                  key={card.id} 
+                  className="p-3 hover:bg-accent transition-colors cursor-pointer group relative"
+                  onClick={() => {
+                    setSelectedCard(card);
+                    setIsCardDetailOpen(true);
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="w-12 h-16 bg-muted rounded overflow-hidden">
+                        <img 
+                          src={card.image_uris?.small || card.image_uris?.normal} 
+                          alt={card.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      {/* Hover image */}
+                      <div className="absolute left-full ml-2 top-0 hidden group-hover:block z-50 pointer-events-none">
+                        <img 
+                          src={card.image_uris?.normal || card.image_uris?.large} 
+                          alt={card.name}
+                          className="w-48 rounded-lg shadow-lg border-2 border-border"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-sm truncate">{card.name}</h3>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{card.set_name}</span>
+                        <span>•</span>
+                        <span>{card.rarity}</span>
+                        {card.is_foil && (
+                          <>
+                            <span>•</span>
+                            <span className="text-primary">Foil</span>
+                          </>
+                        )}
+                      </div>
+                      {card.condition && (
+                        <p className="text-xs text-muted-foreground mt-1">{card.condition}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd) && (
+                        <span className="text-sm font-bold text-primary">
+                          {currency === 'usd' ? '$' : '€'}
+                          {convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd)?.toFixed(2)}
+                        </span>
+                      )}
+                      <span className="text-sm text-muted-foreground">x{card.quantity || 1}</span>
+                    </div>
+                  </div>
+                </Card>
+              ))
+            )}
           </div>
         )}
       </div>
