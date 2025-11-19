@@ -64,7 +64,16 @@ const Collection = () => {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const { cards: searchResults, loading: searchLoading, search } = useCardSearch();
   const [uniqueSets, setUniqueSets] = useState<string[]>([]);
-  const [cardSize, setCardSize] = useState<number>(200);
+  const [cardSize, setCardSize] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem('hatake_collection_card_size');
+      const parsed = stored ? parseInt(stored, 10) : NaN;
+      if (!isNaN(parsed) && parsed >= 120 && parsed <= 320) {
+        return parsed;
+      }
+    }
+    return 200;
+  });
   const [isResizeOpen, setIsResizeOpen] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
@@ -272,8 +281,11 @@ const Collection = () => {
 
   const calculateTotalValue = () => {
     return userCards.reduce((total, card) => {
-      const price = card.is_foil ? card.prices?.usd_foil : card.prices?.usd;
-      const cardValue = (price || 0) * (card.quantity || 1);
+      const basePrice = card.is_foil
+        ? card.prices?.usd_foil ?? card.prices?.eur_foil ?? null
+        : card.prices?.usd ?? card.prices?.eur ?? null;
+      const converted = convertPrice(basePrice ?? null) || 0;
+      const cardValue = converted * (card.quantity || 1);
       return total + cardValue;
     }, 0);
   };
@@ -797,7 +809,11 @@ const Collection = () => {
                       rarity={card.rarity}
                       imageUrl={card.image_uris?.normal || card.image_uris?.small}
                       isFoil={card.is_foil}
-                      price={convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd)}
+                      price={convertPrice(
+                        (card.is_foil
+                          ? card.prices?.usd_foil ?? card.prices?.eur_foil ?? null
+                          : card.prices?.usd ?? card.prices?.eur ?? null) ?? null
+                      )}
                       currency={currency}
                     />
                   </div>

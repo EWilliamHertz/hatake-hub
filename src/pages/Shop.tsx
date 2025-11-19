@@ -182,7 +182,11 @@ const Shop = () => {
                     <span className="text-lg font-bold text-primary">
                       ${product.price.toFixed(2)}
                     </span>
-                    <Button size="sm">
+                    <Button
+                      size="sm"
+                      onClick={() => handleCheckout(product)}
+                      disabled={checkoutLoading === product.id}
+                   >
                       <ShoppingCart className="h-4 w-4" />
                     </Button>
                   </div>

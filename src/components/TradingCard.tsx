@@ -29,7 +29,6 @@ export const TradingCard = ({
     <Card
       className={cn(
         "relative overflow-hidden transition-all hover:scale-105 cursor-pointer",
-        isFoil && "foil-effect",
         className
       )}
     >
@@ -41,7 +40,7 @@ export const TradingCard = ({
       )}
 
       {/* Card Image */}
-      <div className="aspect-[2.5/3.5] bg-muted relative">
+      <div className="aspect-[2.5/3.5] bg-muted relative overflow-hidden">
         {imageUrl ? (
           <img
             src={imageUrl}
@@ -57,6 +56,9 @@ export const TradingCard = ({
             <span className="text-sm">No Image</span>
           </div>
         )}
+        {isFoil && (
+          <div className="absolute inset-0 pointer-events-none foil-effect" />
+        )}
       </div>
 
       {/* Card Info */}
@@ -64,18 +66,27 @@ export const TradingCard = ({
         <h3 className="font-semibold text-sm truncate">{name}</h3>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>{set}</span>
-          <span className={cn(
-            "px-2 py-0.5 rounded-full",
-            rarity === "Rare" && "bg-primary/20 text-primary",
-            rarity === "Uncommon" && "bg-secondary/50 text-secondary-foreground",
-            rarity === "Common" && "bg-muted"
-          )}>
+          <span
+            className={cn(
+              "px-2 py-0.5 rounded-full",
+              rarity === "Rare" && "bg-primary/20 text-primary",
+              rarity === "Uncommon" && "bg-secondary/50 text-secondary-foreground",
+              rarity === "Common" && "bg-muted"
+            )}
+          >
             {rarity}
           </span>
         </div>
         {price !== undefined && price !== null && (
           <div className="text-sm font-semibold text-primary">
-            {currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'DKK' || currency === 'SEK' ? 'kr' : '$'}{price.toFixed(2)}
+            {currency === 'USD'
+              ? '$'
+              : currency === 'EUR'
+              ? '€'
+              : currency === 'DKK' || currency === 'SEK'
+              ? 'kr'
+              : '$'}
+            {price.toFixed(2)}
           </div>
         )}
       </div>
