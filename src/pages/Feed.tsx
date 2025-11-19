@@ -41,7 +41,32 @@ const Feed = () => {
       (snapshot) => {
         const postsData: Post[] = [];
         snapshot.forEach((doc) => {
-          postsData.push({ id: doc.id, ...doc.data() } as Post);
+          const data = doc.data() as any;
+
+          const normalizedPost: Post = {
+            id: doc.id,
+            content: typeof data.content === 'string' ? data.content : '',
+            authorId: typeof data.authorId === 'string' ? data.authorId : data.author?.uid || '',
+            authorName:
+              typeof data.authorName === 'string'
+                ? data.authorName
+                : typeof data.author?.displayName === 'string'
+                  ? data.author.displayName
+                  : 'Unknown',
+            authorPhoto:
+              typeof data.authorPhoto === 'string'
+                ? data.authorPhoto
+                : typeof data.authorPhotoURL === 'string'
+                  ? data.authorPhotoURL
+                  : typeof data.author?.photoURL === 'string'
+                    ? data.author.photoURL
+                    : undefined,
+            timestamp: data.timestamp || new Date(),
+            likes: typeof data.likes === 'number' ? data.likes : 0,
+            comments: typeof data.comments === 'number' ? data.comments : 0,
+          };
+
+          postsData.push(normalizedPost);
         });
         setPosts(postsData);
         setLoading(false);
