@@ -49,12 +49,22 @@ export interface SearchResult {
 }
 
 export const searchScryDex = async (params: SearchScryDexParams): Promise<SearchResult> => {
-  const searchFunction = params.game === 'optcg' 
-    ? httpsCallable<SearchScryDexParams, SearchResult>(functions, 'searchOPTCG')
-    : httpsCallable<SearchScryDexParams, SearchResult>(functions, 'searchScryDex');
-  
-  const result = await searchFunction(params);
-  return result.data;
+  try {
+    const searchFunction = params.game === 'optcg' 
+      ? httpsCallable<SearchScryDexParams, SearchResult>(functions, 'searchOPTCG')
+      : httpsCallable<SearchScryDexParams, SearchResult>(functions, 'searchScryDex');
+    
+    const result = await searchFunction(params);
+    return result.data;
+  } catch (error) {
+    console.error('Search error:', error);
+    return {
+      success: false,
+      data: [],
+      has_more: false,
+      error: error instanceof Error ? error.message : 'Search failed'
+    };
+  }
 };
 
 // Exchange Rates Function
