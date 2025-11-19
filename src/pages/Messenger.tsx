@@ -140,13 +140,15 @@ const Messenger = () => {
       const allUsers: UserProfile[] = [];
       
       usersSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         if (doc.id !== user.uid) {
+          const alias = (data.alias || data.username || "") as string;
+          const displayName = (alias || data.displayName || "Unknown") as string;
           allUsers.push({
             uid: doc.id,
-            displayName: data.displayName || "Unknown",
-            photoURL: data.photoURL || "",
-            email: data.email || "",
+            displayName,
+            photoURL: (data.photoURL || "") as string,
+            email: (data.email || "") as string,
           });
         }
       });
@@ -234,10 +236,10 @@ const Messenger = () => {
     }
   };
 
-  const filteredUsers = users.filter((u) =>
-    u.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredUsers = users.filter((u) => {
+    const haystack = `${u.displayName} ${u.email}`.toLowerCase();
+    return haystack.includes(searchQuery.toLowerCase().trim());
+  });
 
   return (
     <div className="min-h-screen bg-background pb-20 flex">

@@ -164,15 +164,17 @@ const Collection = () => {
       }
 
       const parsedCards = lines.slice(1).map((line, idx) => {
-        const values = line.split(',').map(v => v.trim());
+        const cleanedLine = line.replace(/\r/g, "");
+        const values = cleanedLine.split(",").map((v) => v.trim());
+        if (!values.length) return null;
         const name = values[nameIndex];
         if (!name) return null;
 
-        const quantityRaw = quantityIndex >= 0 ? values[quantityIndex] : '1';
-        const quantity = parseInt(quantityRaw || '1', 10) || 1;
-        const setName = setIndex >= 0 ? values[setIndex] : '';
-        const foilValue = foilIndex >= 0 ? (values[foilIndex] || '').toLowerCase() : '';
-        const isFoil = foilValue.includes('foil');
+        const quantityRaw = quantityIndex >= 0 ? values[quantityIndex] : "1";
+        const quantity = parseInt((quantityRaw || "1").replace(/\D/g, ""), 10) || 1;
+        const setName = setIndex >= 0 ? values[setIndex] : "";
+        const foilValue = foilIndex >= 0 ? (values[foilIndex] || "").toLowerCase() : "";
+        const isFoil = foilValue.includes("foil");
 
         return {
           id: `${name}-${idx}`,
@@ -524,6 +526,16 @@ const Collection = () => {
                 >
                   Cancel
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const allIds = new Set(filteredCards.map((card) => card.id));
+                    setSelectedCardIds(allIds);
+                  }}
+                >
+                  Select All ({filteredCards.length})
+                </Button>
                 <Button 
                   variant="default" 
                   size="sm"
@@ -534,6 +546,7 @@ const Collection = () => {
                 </Button>
               </>
             )}
+
           </div>
         </div>
       </header>
