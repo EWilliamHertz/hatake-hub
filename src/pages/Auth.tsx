@@ -12,6 +12,7 @@ import { Loader2 } from 'lucide-react';
 const Auth = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const { signIn, signUp, signInWithGoogle, user } = useAuth();
@@ -53,8 +54,8 @@ const Auth = () => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email || !password) {
-      toast.error('Please enter email and password');
+    if (!email || !password || !displayName) {
+      toast.error('Please fill all fields');
       return;
     }
 
@@ -64,7 +65,7 @@ const Auth = () => {
     }
 
     setLoading(true);
-    const { error } = await signUp(email, password);
+    const { error } = await signUp(email, password, displayName);
     
     if (error) {
       if (error.message.includes('email-already-in-use')) {
@@ -171,6 +172,19 @@ const Auth = () => {
 
           <TabsContent value="signup">
             <form onSubmit={handleSignUp} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="signup-name">Display Name</Label>
+                <Input
+                  id="signup-name"
+                  type="text"
+                  placeholder="Your Name"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  disabled={loading}
+                  required
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="signup-email">Email</Label>
                 <Input
