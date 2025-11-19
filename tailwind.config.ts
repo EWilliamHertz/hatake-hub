@@ -57,6 +57,12 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        gaming: {
+          purple: "hsl(var(--gaming-purple))",
+          "purple-light": "hsl(var(--gaming-purple-light))",
+          "purple-dark": "hsl(var(--gaming-purple-dark))",
+        },
+        gold: "hsl(var(--gold))",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -80,10 +86,28 @@ export default {
             height: "0",
           },
         },
+        "foil-shimmer": {
+          "0%": {
+            backgroundPosition: "-200% center",
+          },
+          "100%": {
+            backgroundPosition: "200% center",
+          },
+        },
+        "pulse-glow": {
+          "0%, 100%": {
+            boxShadow: "0 0 10px hsl(var(--primary) / 0.3)",
+          },
+          "50%": {
+            boxShadow: "0 0 20px hsl(var(--primary) / 0.6)",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "foil-shimmer": "foil-shimmer 3s linear infinite",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
       },
     },
   },
