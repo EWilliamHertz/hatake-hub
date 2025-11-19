@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Heart, MessageCircle, Share2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logo from "@/assets/hatake-logo.png";
+import { PostGallery } from "@/components/PostGallery";
 
 interface Post {
   id: string;
@@ -160,38 +161,12 @@ const Feed = () => {
                 {post.content}
               </div>
 
-              {/* Post Media */}
+              {/* Post Media Gallery */}
               {post.mediaUrls && post.mediaUrls.length > 0 && (
-                <div className="mb-4 grid gap-2" style={{
-                  gridTemplateColumns: post.mediaUrls.length === 1 ? '1fr' : 'repeat(2, 1fr)'
-                }}>
-                  {post.mediaUrls.map((url, index) => {
-                    const mediaType = post.mediaTypes?.[index] || '';
-                    const isVideo = mediaType.startsWith('video/');
-                    
-                    return (
-                      <div key={index} className="rounded-lg overflow-hidden bg-muted">
-                        {isVideo ? (
-                          <video 
-                            controls 
-                            className="w-full h-auto max-h-96 object-contain"
-                            preload="metadata"
-                          >
-                            <source src={url} type={mediaType} />
-                            Your browser does not support the video tag.
-                          </video>
-                        ) : (
-                          <img 
-                            src={url} 
-                            alt="Post media" 
-                            className="w-full h-auto object-cover"
-                            loading="lazy"
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <PostGallery 
+                  mediaUrls={post.mediaUrls} 
+                  mediaTypes={post.mediaTypes || []} 
+                />
               )}
 
               {/* Post Actions */}
