@@ -189,6 +189,8 @@ const Collection = () => {
         (h) => h === 'scryfall id' || h === 'scryfall_id'
       );
       const foilIndex = headers.findIndex(h => h.includes('foil') || h.includes('finish'));
+      const conditionIndex = headers.findIndex(h => h.includes('condition') || h === 'state' || h === 'grade');
+      const languageIndex = headers.findIndex(h => h.includes('language') || h === 'lang');
 
       if (nameIndex === -1) {
         toast.error('CSV must have a "Name" or "Card Name" column');
@@ -240,7 +242,9 @@ const Collection = () => {
         const collectorNumber = collectorNumberIndex >= 0 ? values[collectorNumberIndex] : "";
         const scryfallId = scryfallIdIndex >= 0 ? values[scryfallIdIndex] : "";
         const foilValue = foilIndex >= 0 ? (values[foilIndex] || "").toLowerCase() : "";
-        const isFoil = foilValue.includes("foil");
+        const isFoil = foilValue.includes("foil") || foilValue.includes("true") || foilValue === "1";
+        const condition = conditionIndex >= 0 ? values[conditionIndex] : "Near Mint";
+        const language = languageIndex >= 0 ? values[languageIndex] : "English";
 
         return {
           id: `${name}-${idx}`,
@@ -251,6 +255,8 @@ const Collection = () => {
           collector_number: collectorNumber,
           scryfall_id: scryfallId,
           is_foil: isFoil,
+          condition,
+          language,
           rowIndex: idx + 2,
         };
       }).filter(Boolean) as Array<{
@@ -262,6 +268,8 @@ const Collection = () => {
         collector_number?: string;
         scryfall_id?: string;
         is_foil: boolean;
+        condition: string;
+        language: string;
         rowIndex: number;
       }>;
 
@@ -272,60 +280,104 @@ const Collection = () => {
 
       toast.info(`Searching for ${parsedCards.length} cards and fetching prices...`);
       
-      // Now fetch full card data including prices from ScryDex API
+      // Now fetch full card data including prices from ScryDex API (following GeminiHatake pattern)
       const cardsWithData: any[] = [];
       
-      for (const parsed of parsedCards) {
+      for (let i = 0; i < parsedCards.length; i++) {
+        const card = parsedCards[i];
+        
         try {
-          // Build search query based on available info
-          let searchQuery = `!"${parsed.name}"`;
-          if (parsed.collector_number && parsed.set_code) {
-            searchQuery = `!"${parsed.name}" set:${parsed.set_code} number:${parsed.collector_number}`;
-          } else if (parsed.set_code) {
-            searchQuery = `!"${parsed.name}" set:${parsed.set_code}`;
+          // Build search query with improved logic (following csv-fixed.js pattern)
+          let searchQuery = `!"${card.name}"`;
+          
+          // Add set information if available
+          if (card.set_code && card.set_code.length > 0) {
+            searchQuery += ` set:${card.set_code.toLowerCase()}`;
+          } else if (card.set_name && card.set_name.length > 0) {
+            searchQuery += ` set:"${card.set_name}"`;
           }
           
-          const result = await searchScryDex({
+          // Add collector number if available
+          if (card.collector_number && card.collector_number.length > 0) {
+            searchQuery += ` cn:${card.collector_number}`;
+          }
+          
+          console.log(`Searching for: ${searchQuery}`);
+          
+          // Search for the card using the API
+          let result = await searchScryDex({
             query: searchQuery,
             game: 'magic',
             limit: 1
           });
 
-          if (result.success && result.data.length > 0) {
-            const card = result.data[0];
-            
-            cardsWithData.push({
-              ...parsed,
-              api_id: card.api_id || card.id,
-              image_uris: card.image_uris || (card.images?.[0] ? {
-                small: card.images[0].small,
-                normal: card.images[0].medium,
-                large: card.images[0].large
-              } : { small: '', normal: '', large: '' }),
-              set_name: card.set_name || parsed.set_name,
-              rarity: card.rarity,
-              game: card.game || 'mtg',
-              prices: {
-                usd: card.prices?.usd || null,
-                usd_foil: card.prices?.usd_foil || null,
-                eur: card.prices?.eur || null,
-                eur_foil: card.prices?.eur_foil || null
-              }
+          // If no results with specific query, try name-only search
+          if (!result.success || result.data.length === 0) {
+            console.warn(`Specific query failed for "${card.name}". Trying name-only search.`);
+            result = await searchScryDex({
+              query: `!"${card.name}"`,
+              game: 'magic',
+              limit: 1
             });
+          }
+
+          // If still no results, try without quotes
+          if (!result.success || result.data.length === 0) {
+            console.warn(`Quoted search failed for "${card.name}". Trying unquoted search.`);
+            result = await searchScryDex({
+              query: card.name,
+              game: 'magic',
+              limit: 1
+            });
+          }
+
+          if (result.success && result.data.length > 0) {
+            const foundCard = result.data[0];
+            
+            // Merge CSV data with found card data
+            cardsWithData.push({
+              ...foundCard,
+              api_id: foundCard.api_id || foundCard.id,
+              image_uris: foundCard.image_uris || (foundCard.images?.[0] ? {
+                small: foundCard.images[0].small,
+                normal: foundCard.images[0].medium,
+                large: foundCard.images[0].large
+              } : { small: '', normal: '', large: '' }),
+              set_name: foundCard.set_name || card.set_name,
+              rarity: foundCard.rarity,
+              game: foundCard.game || 'mtg',
+              prices: {
+                usd: foundCard.prices?.usd || null,
+                usd_foil: foundCard.prices?.usd_foil || null,
+                eur: foundCard.prices?.eur || null,
+                eur_foil: foundCard.prices?.eur_foil || null
+              },
+              // Preserve CSV-specific data
+              quantity: card.quantity,
+              condition: card.condition,
+              language: card.language,
+              is_foil: card.is_foil
+            });
+            
+            console.log(`✓ Found card: ${card.name} with price: €${foundCard.prices?.eur || 'N/A'}`);
           } else {
             // Card not found via API, keep parsed data but no prices
+            console.warn(`✗ Card not found: ${card.name}`);
             cardsWithData.push({
-              ...parsed,
+              ...card,
               prices: { usd: null, usd_foil: null, eur: null, eur_foil: null }
             });
           }
         } catch (error) {
-          console.error(`Error searching for ${parsed.name}:`, error);
+          console.error(`Error searching for ${card.name}:`, error);
           cardsWithData.push({
-            ...parsed,
+            ...card,
             prices: { usd: null, usd_foil: null, eur: null, eur_foil: null }
           });
         }
+        
+        // Small delay to prevent overwhelming the API (following GeminiHatake pattern)
+        await new Promise(resolve => setTimeout(resolve, 150));
       }
 
       setCsvPreviewCards(cardsWithData);
@@ -333,7 +385,7 @@ const Collection = () => {
       setIsImportDialogOpen(false);
       
       const cardsWithPrices = cardsWithData.filter(c => c.prices?.usd || c.prices?.eur);
-      toast.success(`Found ${cardsWithPrices.length} of ${parsedCards.length} cards with pricing data`);
+      toast.success(`Found prices for ${cardsWithPrices.length} of ${parsedCards.length} cards`);
     } catch (error) {
       console.error('CSV import error:', error);
       toast.error('Failed to parse CSV file');
