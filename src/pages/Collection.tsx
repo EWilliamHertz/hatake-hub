@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Grid3x3, List, Filter, Plus, Upload, DollarSign, Maximize2, CheckSquare } from "lucide-react";
 import { useCardSearch } from "@/hooks/useCardSearch";
 import { useCurrency } from "@/hooks/useCurrency";
+import { searchScryDex, CardResult } from "@/lib/firebase-functions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -72,6 +73,7 @@ const Collection = () => {
     name: string;
     quantity: number;
     set_name: string;
+    set_code?: string;
     is_foil: boolean;
     rowIndex: number;
   }>>([]);
@@ -155,7 +157,12 @@ const Collection = () => {
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
       const nameIndex = headers.findIndex(h => h.includes('name') || h === 'card name');
       const quantityIndex = headers.findIndex(h => h.includes('quantity') || h.includes('count'));
-      const setIndex = headers.findIndex(h => h.includes('set') || h.includes('edition'));
+      const setCodeIndex = headers.findIndex(
+        (h) => h === 'set code' || h === 'set_code' || h === 'set'
+      );
+      const setNameIndex = headers.findIndex(
+        (h) => h === 'set name' || h === 'set_name' || h.includes('edition')
+      );
       const foilIndex = headers.findIndex(h => h.includes('foil') || h.includes('finish'));
 
       if (nameIndex === -1) {
@@ -163,16 +170,48 @@ const Collection = () => {
         return;
       }
 
+      const parseCsvLine = (line: string): string[] => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+
+          if (char === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+              // Escaped quote
+              current += '"';
+              i++;
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ',' && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+
+        if (current.length > 0) {
+          result.push(current.trim());
+        }
+
+        return result;
+      };
+
       const parsedCards = lines.slice(1).map((line, idx) => {
         const cleanedLine = line.replace(/\r/g, "");
-        const values = cleanedLine.split(",").map((v) => v.trim());
+        const values = parseCsvLine(cleanedLine);
         if (!values.length) return null;
         const name = values[nameIndex];
         if (!name) return null;
 
         const quantityRaw = quantityIndex >= 0 ? values[quantityIndex] : "1";
         const quantity = parseInt((quantityRaw || "1").replace(/\D/g, ""), 10) || 1;
-        const setName = setIndex >= 0 ? values[setIndex] : "";
+        const setCode = setCodeIndex >= 0 ? values[setCodeIndex] : "";
+        const setName = setNameIndex >= 0 ? values[setNameIndex] : "";
         const foilValue = foilIndex >= 0 ? (values[foilIndex] || "").toLowerCase() : "";
         const isFoil = foilValue.includes("foil");
 
@@ -181,6 +220,7 @@ const Collection = () => {
           name,
           quantity,
           set_name: setName,
+          set_code: setCode,
           is_foil: isFoil,
           rowIndex: idx + 2,
         };
@@ -189,6 +229,7 @@ const Collection = () => {
         name: string;
         quantity: number;
         set_name: string;
+        set_code?: string;
         is_foil: boolean;
         rowIndex: number;
       }>;
@@ -316,24 +357,87 @@ const Collection = () => {
                     </div>
                     <div className="flex justify-between items-center pt-2">
                       <p className="text-xs text-muted-foreground">
-                        Only basic info (name, quantity, set, foil) will be saved. You can refine cards later via edit.
+                        Only basic info (name, quantity, set, foil) will be saved for unmatched cards. When possible, prices and images will be fetched automatically.
                       </p>
                       <Button
                         disabled={csvPreviewCards.length === 0}
                         onClick={async () => {
                           if (!user) return;
                           try {
+                            const results = await Promise.all(
+                              csvPreviewCards.map(async (card) => {
+                                try {
+                                  const searchResult = await searchScryDex({
+                                    query: card.name,
+                                    game: 'magic',
+                                    limit: 10,
+                                  });
+
+                                  if (!searchResult.success || !searchResult.data.length) {
+                                    return { card, matchedCard: null };
+                                  }
+
+                                  let matched: CardResult | null = searchResult.data[0];
+
+                                  if (card.set_code) {
+                                    const byCode = searchResult.data.find(
+                                      (c) => c.expansion?.id?.toLowerCase() === card.set_code?.toLowerCase()
+                                    );
+                                    if (byCode) matched = byCode;
+                                  } else if (card.set_name) {
+                                    const byName = searchResult.data.find(
+                                      (c) => c.set_name?.toLowerCase() === card.set_name.toLowerCase()
+                                    );
+                                    if (byName) matched = byName;
+                                  }
+
+                                  return { card, matchedCard: matched };
+                                } catch (err) {
+                                  console.error('CSV search error for card', card.name, err);
+                                  return { card, matchedCard: null };
+                                }
+                              })
+                            );
+
                             const batch = writeBatch(db);
-                            csvPreviewCards.forEach((card) => {
+
+                            results.forEach(({ card, matchedCard }) => {
                               const docRef = doc(collection(db, 'users', user.uid, 'collection'));
+                              const image_uris = matchedCard?.image_uris
+                                ? matchedCard.image_uris
+                                : matchedCard?.images
+                                ? {
+                                    small: matchedCard.images[0]?.small || '',
+                                    normal: matchedCard.images[0]?.medium || '',
+                                    large: matchedCard.images[0]?.large || '',
+                                  }
+                                : undefined;
+
                               batch.set(docRef, {
-                                name: card.name,
-                                set_name: card.set_name,
+                                api_id: matchedCard?.api_id || matchedCard?.id || undefined,
+                                name: matchedCard?.name || card.name,
+                                set_name: matchedCard?.set_name || card.set_name,
+                                rarity: matchedCard?.rarity || 'unknown',
+                                collector_number: matchedCard?.collector_number || '',
+                                image_uris,
                                 quantity: card.quantity,
+                                condition: 'Near Mint',
+                                language: 'English',
                                 is_foil: card.is_foil,
-                                addedAt: new Date().toISOString(),
+                                is_signed: false,
+                                is_altered: false,
+                                is_graded: false,
+                                grading_company: null,
+                                grade: null,
+                                notes: '',
+                                purchase_price: null,
+                                prices: matchedCard?.prices || {},
+                                game: matchedCard?.game || 'mtg',
+                                addedAt: new Date(),
+                                priceLastUpdated: new Date().toISOString(),
                               });
                             });
+
                             await batch.commit();
                             toast.success(`Imported ${csvPreviewCards.length} cards into your collection`);
                             setCsvPreviewCards([]);
