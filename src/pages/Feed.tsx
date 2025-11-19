@@ -25,6 +25,8 @@ interface Post {
     timestamp: Timestamp;
   }>;
   hashtags?: string[];
+  mediaUrls?: string[];
+  mediaTypes?: string[];
 }
 
 const Feed = () => {
@@ -60,7 +62,9 @@ const Feed = () => {
             timestamp: data.timestamp || new Date(),
             likes: Array.isArray(data.likes) ? data.likes : [],
             comments: Array.isArray(data.comments) ? data.comments : [],
-            hashtags: Array.isArray(data.hashtags) ? data.hashtags : []
+            hashtags: Array.isArray(data.hashtags) ? data.hashtags : [],
+            mediaUrls: Array.isArray(data.mediaUrls) ? data.mediaUrls : [],
+            mediaTypes: Array.isArray(data.mediaTypes) ? data.mediaTypes : []
           });
         });
         setPosts(postsData);
@@ -152,10 +156,43 @@ const Feed = () => {
               </div>
 
               {/* Post Content */}
-              <div 
-                className="text-sm mb-4 prose prose-sm dark:prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: post.content }}
-              />
+              <div className="text-sm mb-4 whitespace-pre-wrap">
+                {post.content}
+              </div>
+
+              {/* Post Media */}
+              {post.mediaUrls && post.mediaUrls.length > 0 && (
+                <div className="mb-4 grid gap-2" style={{
+                  gridTemplateColumns: post.mediaUrls.length === 1 ? '1fr' : 'repeat(2, 1fr)'
+                }}>
+                  {post.mediaUrls.map((url, index) => {
+                    const mediaType = post.mediaTypes?.[index] || '';
+                    const isVideo = mediaType.startsWith('video/');
+                    
+                    return (
+                      <div key={index} className="rounded-lg overflow-hidden bg-muted">
+                        {isVideo ? (
+                          <video 
+                            controls 
+                            className="w-full h-auto max-h-96 object-contain"
+                            preload="metadata"
+                          >
+                            <source src={url} type={mediaType} />
+                            Your browser does not support the video tag.
+                          </video>
+                        ) : (
+                          <img 
+                            src={url} 
+                            alt="Post media" 
+                            className="w-full h-auto object-cover"
+                            loading="lazy"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Post Actions */}
               <div className="flex items-center gap-4 pt-3 border-t border-border">

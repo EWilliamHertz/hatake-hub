@@ -269,24 +269,30 @@ const Messenger = () => {
                   />
                 </div>
                 <div className="max-h-[400px] overflow-y-auto space-y-2">
-                  {filteredUsers.map((u) => (
-                    <button
-                      key={u.uid}
-                      onClick={() => startChat(u)}
-                      className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted transition-colors"
-                    >
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={u.photoURL} />
-                        <AvatarFallback>
-                          {u.displayName.slice(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 text-left">
-                        <p className="font-medium text-sm">{u.displayName}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
-                      </div>
-                    </button>
-                  ))}
+                  {filteredUsers.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      {searchQuery ? "No users found" : "Loading users..."}
+                    </div>
+                  ) : (
+                    filteredUsers.map((u) => (
+                      <button
+                        key={u.uid}
+                        onClick={() => startChat(u)}
+                        className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted transition-colors"
+                      >
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={u.photoURL} />
+                          <AvatarFallback>
+                            {u.displayName.slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 text-left">
+                          <p className="font-medium text-sm">{u.displayName}</p>
+                          <p className="text-xs text-muted-foreground">{u.email}</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
               </div>
             </DialogContent>
