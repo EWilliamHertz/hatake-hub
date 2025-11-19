@@ -6,6 +6,7 @@ import { db } from "@/lib/firebase";
 import { TradingCard } from "@/components/TradingCard";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, Heart } from "lucide-react";
 import { toast } from "sonner";
 import { useCurrency } from "@/hooks/useCurrency";
@@ -92,22 +93,17 @@ const Wishlist = () => {
               <Heart className="h-6 w-6 text-primary fill-primary" />
               Wishlist
             </h1>
-            <div className="flex gap-2">
-              <Button
-                variant={currency === 'usd' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setCurrency('usd')}
-              >
-                USD
-              </Button>
-              <Button
-                variant={currency === 'eur' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setCurrency('eur')}
-              >
-                EUR
-              </Button>
-            </div>
+            <Select value={currency} onValueChange={(val) => setCurrency(val as any)}>
+              <SelectTrigger className="w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="USD">USD</SelectItem>
+                <SelectItem value="EUR">EUR</SelectItem>
+                <SelectItem value="DKK">DKK</SelectItem>
+                <SelectItem value="SEK">SEK</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <p className="text-sm text-muted-foreground">
             {wishlistCards.length} {wishlistCards.length === 1 ? 'card' : 'cards'}

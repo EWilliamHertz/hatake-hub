@@ -247,6 +247,7 @@ const Messenger = () => {
           <h1 className="text-xl font-bold">Messenger</h1>
           <Dialog open={isNewChatOpen} onOpenChange={(open) => {
             setIsNewChatOpen(open);
+            setSearchQuery("");
             if (open) loadUsers();
           }}>
             <DialogTrigger asChild>

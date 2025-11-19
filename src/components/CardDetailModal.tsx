@@ -46,7 +46,7 @@ interface CardDetailModalProps {
 
 export const CardDetailModal = ({ open, onOpenChange, card }: CardDetailModalProps) => {
   const { user } = useAuth();
-  const { currency, convertPrice } = useCurrency();
+  const { currency, convertPrice, formatPrice } = useCurrency();
   const [quantity, setQuantity] = useState(1);
   const [condition, setCondition] = useState('Near Mint');
   const [language, setLanguage] = useState('English');
@@ -147,7 +147,7 @@ export const CardDetailModal = ({ open, onOpenChange, card }: CardDetailModalPro
               <p className="text-sm text-muted-foreground">{card.set_name}</p>
               {currentPrice && (
                 <p className="text-lg font-bold text-primary">
-                  {currency === 'usd' ? '$' : '€'}{currentPrice.toFixed(2)}
+                  {formatPrice(currentPrice)}
                 </p>
               )}
             </DialogHeader>
