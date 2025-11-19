@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import logo from "@/assets/hatake-logo.png";
 import { PostGallery } from "@/components/PostGallery";
 import { CreatePostDialog } from "@/components/CreatePostDialog";
+import { CommentSection } from "@/components/CommentSection";
 import { toast } from "sonner";
 
 interface Post {
@@ -39,6 +40,7 @@ const Feed = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user) {
@@ -206,7 +208,20 @@ const Feed = () => {
                   <Heart className={`h-4 w-4 ${post.likes.includes(user?.uid || '') ? 'fill-primary text-primary' : ''}`} />
                   <span className="text-xs">{post.likes.length || 0}</span>
                 </Button>
-                <Button variant="ghost" size="sm" className="gap-2">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="gap-2"
+                  onClick={() => {
+                    const newExpanded = new Set(expandedComments);
+                    if (newExpanded.has(post.id)) {
+                      newExpanded.delete(post.id);
+                    } else {
+                      newExpanded.add(post.id);
+                    }
+                    setExpandedComments(newExpanded);
+                  }}
+                >
                   <MessageCircle className="h-4 w-4" />
                   <span className="text-xs">{post.comments.length || 0}</span>
                 </Button>
@@ -214,6 +229,13 @@ const Feed = () => {
                   <Share2 className="h-4 w-4" />
                 </Button>
               </div>
+
+              {/* Comments Section */}
+              {expandedComments.has(post.id) && (
+                <div className="pt-3 border-t border-border mt-3">
+                  <CommentSection postId={post.id} comments={post.comments} />
+                </div>
+              )}
             </Card>
           ))
         )}
