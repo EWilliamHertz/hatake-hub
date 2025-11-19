@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -220,6 +220,7 @@ export const BulkListForSaleModal = ({
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col p-0">
         <DialogHeader className="px-6 py-4 border-b">
           <DialogTitle>Review and Price Items for Sale</DialogTitle>
+          <DialogDescription>Set prices for each card before listing</DialogDescription>
         </DialogHeader>
 
         {/* Global Controls */}
