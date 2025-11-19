@@ -80,15 +80,26 @@ const Shop = () => {
 
     setCheckoutLoading(product.id);
     try {
-      const createCheckout = httpsCallable(functions, 'createStripeCheckout');
-      const result = await createCheckout({
-        priceId: product.stripePriceId,
-        quantity: 1,
-        successUrl: window.location.origin + '/shop?success=true',
-        cancelUrl: window.location.origin + '/shop?canceled=true',
+      // Call Firebase function directly using fetch (matching GeminiHatake pattern)
+      const response = await fetch('https://us-central1-hatakesocial-88b5e.cloudfunctions.net/createStripeCheckout', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          priceId: product.stripePriceId,
+          quantity: 1,
+          successUrl: window.location.origin + '/shop?success=true',
+          cancelUrl: window.location.origin + '/shop?canceled=true',
+        }),
       });
 
-      const session = result.data as any;
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create checkout session');
+      }
+
+      const session = await response.json();
       
       if (session.error) {
         throw new Error(session.error);
@@ -102,7 +113,7 @@ const Shop = () => {
       }
     } catch (error) {
       console.error('Checkout error:', error);
-      toast.error('Failed to start checkout. Please try again.');
+      toast.error(error instanceof Error ? error.message : 'Failed to start checkout. Please try again.');
       setCheckoutLoading(null);
     }
   };
