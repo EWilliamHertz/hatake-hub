@@ -123,10 +123,10 @@ const Feed = () => {
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-card border-b border-border">
-        <div className="max-w-2xl mx-auto px-4 py-4">
+        <div className="max-w-2xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src={logo} alt="Hatake logo" className="h-8 w-8 rounded" />
+              <img src={logo} alt="Hatake logo" className="h-16 w-16 rounded-lg" />
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
                   HatakeSocial
