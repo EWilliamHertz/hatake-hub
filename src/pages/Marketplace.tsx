@@ -31,6 +31,8 @@ const Marketplace = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -42,13 +44,23 @@ const Marketplace = () => {
     const marketplaceRef = collection(db, 'marketplace');
     const q = query(marketplaceRef, orderBy('timestamp', 'desc'), limit(50));
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const listingsData: MarketplaceListing[] = [];
-      snapshot.forEach((doc) => {
-        listingsData.push({ id: doc.id, ...doc.data() } as MarketplaceListing);
-      });
-      setListings(listingsData);
-    });
+    const unsubscribe = onSnapshot(
+      q, 
+      (snapshot) => {
+        const listingsData: MarketplaceListing[] = [];
+        snapshot.forEach((doc) => {
+          listingsData.push({ id: doc.id, ...doc.data() } as MarketplaceListing);
+        });
+        setListings(listingsData);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error('Marketplace error:', err);
+        setError(err.message);
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [user, navigate]);
@@ -78,7 +90,16 @@ const Marketplace = () => {
 
       {/* Marketplace Grid */}
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {listings.length === 0 ? (
+        {loading ? (
+          <Card className="p-8 text-center">
+            <p className="text-muted-foreground">Loading marketplace...</p>
+          </Card>
+        ) : error ? (
+          <Card className="p-8 text-center">
+            <p className="text-destructive mb-2">Error loading marketplace</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </Card>
+        ) : listings.length === 0 ? (
           <Card className="p-8 text-center">
             <p className="text-muted-foreground">No listings available yet</p>
           </Card>

@@ -6,6 +6,7 @@ import { db } from "@/lib/firebase";
 import { TradingCard } from "@/components/TradingCard";
 import { CardSearchBar } from "@/components/CardSearchBar";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Grid3x3, List, Filter, Plus } from "lucide-react";
 import { useCardSearch } from "@/hooks/useCardSearch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -37,6 +38,8 @@ const Collection = () => {
   const [selectedSet, setSelectedSet] = useState<string>("all");
   const [selectedRarity, setSelectedRarity] = useState<string>("all");
   const [userCards, setUserCards] = useState<UserCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const { cards: searchResults, loading: searchLoading, search } = useCardSearch();
 
@@ -50,13 +53,23 @@ const Collection = () => {
     const collectionRef = collection(db, 'users', user.uid, 'collection');
     const q = query(collectionRef);
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const cards: UserCard[] = [];
-      snapshot.forEach((doc) => {
-        cards.push({ id: doc.id, ...doc.data() } as UserCard);
-      });
-      setUserCards(cards);
-    });
+    const unsubscribe = onSnapshot(
+      q, 
+      (snapshot) => {
+        const cards: UserCard[] = [];
+        snapshot.forEach((doc) => {
+          cards.push({ id: doc.id, ...doc.data() } as UserCard);
+        });
+        setUserCards(cards);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error('Collection error:', err);
+        setError(err.message);
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [user, navigate]);
@@ -165,7 +178,16 @@ const Collection = () => {
 
       {/* Collection Grid/List */}
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {filteredCards.length === 0 ? (
+        {loading ? (
+          <Card className="p-8 text-center">
+            <p className="text-muted-foreground">Loading collection...</p>
+          </Card>
+        ) : error ? (
+          <Card className="p-8 text-center">
+            <p className="text-destructive mb-2">Error loading collection</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </Card>
+        ) : filteredCards.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-muted-foreground mb-4">Your collection is empty</p>
             <Button onClick={() => setIsAddDialogOpen(true)}>
