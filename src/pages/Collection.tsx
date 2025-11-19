@@ -5,11 +5,13 @@ import { collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { TradingCard } from "@/components/TradingCard";
 import { CardSearchBar } from "@/components/CardSearchBar";
+import { CardDetailModal } from "@/components/CardDetailModal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Grid3x3, List, Filter, Plus } from "lucide-react";
+import { Grid3x3, List, Filter, Plus, Upload } from "lucide-react";
 import { useCardSearch } from "@/hooks/useCardSearch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   Select,
@@ -46,6 +48,9 @@ const Collection = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [selectedCard, setSelectedCard] = useState<any>(null);
+  const [isCardDetailOpen, setIsCardDetailOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const { cards: searchResults, loading: searchLoading, search } = useCardSearch();
 
   useEffect(() => {
@@ -95,10 +100,61 @@ const Collection = () => {
     search({ query, game: game as any, page: 1, limit: 50 });
   };
 
-  const handleAddCard = async (card: any) => {
-    // Would add card to Firestore collection
-    toast.success(`${card.name} added to collection!`);
+  const handleCardClick = (card: any) => {
+    setSelectedCard(card);
+    setIsCardDetailOpen(true);
     setIsAddDialogOpen(false);
+  };
+
+  const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      toast.error('Please select a CSV file');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      // Parse CSV header
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const nameIndex = headers.findIndex(h => h.includes('name') || h === 'card name');
+      const quantityIndex = headers.findIndex(h => h.includes('quantity') || h.includes('count'));
+      const setIndex = headers.findIndex(h => h.includes('set') || h.includes('edition'));
+      const foilIndex = headers.findIndex(h => h.includes('foil') || h.includes('finish'));
+
+      if (nameIndex === -1) {
+        toast.error('CSV must have a "Name" or "Card Name" column');
+        return;
+      }
+
+      let imported = 0;
+      const errors: string[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        const cardName = values[nameIndex];
+        
+        if (!cardName) continue;
+
+        try {
+          // You could enhance this to actually search and add the cards
+          // For now, just count how many we would import
+          imported++;
+        } catch (error) {
+          errors.push(`Line ${i + 1}: ${cardName}`);
+        }
+      }
+
+      toast.success(`Parsed ${imported} cards from CSV. Click on search results to add them.`);
+      setIsImportDialogOpen(false);
+    } catch (error) {
+      console.error('CSV import error:', error);
+      toast.error('Failed to parse CSV file');
+    }
   };
 
   const filteredCards = userCards.filter((card) => {
@@ -114,36 +170,78 @@ const Collection = () => {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-4">
             <h1 className="text-2xl font-bold">My Collection</h1>
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="gap-2">
-                  <Plus className="h-4 w-4" />
-                  Add Cards
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Search & Add Cards</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <CardSearchBar onSearch={handleSearch} loading={searchLoading} />
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {searchResults.map((card) => (
-                      <div key={card.id} className="cursor-pointer" onClick={() => handleAddCard(card)}>
-                        <TradingCard
-                          id={card.id}
-                          name={card.name}
-                          set={card.set_name}
-                          rarity={card.rarity}
-                          imageUrl={card.image_uris.normal}
-                          isFoil={false}
-                        />
-                      </div>
-                    ))}
+            <div className="flex gap-2">
+              <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="gap-2">
+                    <Upload className="h-4 w-4" />
+                    Import CSV
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Import from CSV</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Upload a CSV file from Manabox or other collection apps. The file should include at least a "Name" column.
+                    </p>
+                    <Input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleImportCSV}
+                    />
                   </div>
-                </div>
-              </DialogContent>
-            </Dialog>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Add Cards
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Search & Add Cards</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <CardSearchBar onSearch={handleSearch} loading={searchLoading} />
+                    {searchLoading ? (
+                      <div className="text-center py-8">
+                        <p className="text-muted-foreground">Searching...</p>
+                      </div>
+                    ) : searchResults.length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto">
+                        {searchResults.map((card) => (
+                          <div key={card.id} className="cursor-pointer" onClick={() => handleCardClick(card)}>
+                            <TradingCard
+                              id={card.id}
+                              name={card.name}
+                              set={card.set_name}
+                              rarity={card.rarity}
+                              imageUrl={card.image_uris?.normal || card.images?.[0]?.medium}
+                              isFoil={false}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-muted-foreground">Search for cards to add to your collection</p>
+                      </div>
+                    )}
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <CardDetailModal
+              open={isCardDetailOpen}
+              onOpenChange={setIsCardDetailOpen}
+              card={selectedCard}
+            />
           </div>
           
           {/* Controls */}

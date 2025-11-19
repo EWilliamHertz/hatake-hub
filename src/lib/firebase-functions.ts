@@ -50,19 +50,31 @@ export interface SearchResult {
 
 export const searchScryDex = async (params: SearchScryDexParams): Promise<SearchResult> => {
   try {
-    const searchFunction = params.game === 'optcg' 
+    // Map game names to match backend expectations
+    const gameMap: Record<string, string> = {
+      'magic': 'mtg',
+      'pokemon': 'pokemon',
+      'lorcana': 'lorcana',
+      'optcg': 'optcg'
+    };
+
+    const mappedGame = gameMap[params.game] || params.game;
+    const searchParams = { ...params, game: mappedGame as any };
+
+    const searchFunction = mappedGame === 'optcg' 
       ? httpsCallable<SearchScryDexParams, SearchResult>(functions, 'searchOPTCG')
       : httpsCallable<SearchScryDexParams, SearchResult>(functions, 'searchScryDex');
     
-    const result = await searchFunction(params);
+    const result = await searchFunction(searchParams);
     return result.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Search error:', error);
+    const errorMessage = error?.message || 'Search failed';
     return {
       success: false,
       data: [],
       has_more: false,
-      error: error instanceof Error ? error.message : 'Search failed'
+      error: errorMessage
     };
   }
 };

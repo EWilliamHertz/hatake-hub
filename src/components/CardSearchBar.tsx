@@ -17,7 +17,7 @@ interface CardSearchBarProps {
 
 export const CardSearchBar = ({ onSearch, loading }: CardSearchBarProps) => {
   const [query, setQuery] = useState('');
-  const [game, setGame] = useState('magic');
+  const [game, setGame] = useState('mtg');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +33,7 @@ export const CardSearchBar = ({ onSearch, loading }: CardSearchBarProps) => {
           <SelectValue placeholder="Game" />
         </SelectTrigger>
         <SelectContent className="bg-popover">
-          <SelectItem value="magic">Magic</SelectItem>
+          <SelectItem value="mtg">Magic</SelectItem>
           <SelectItem value="pokemon">Pokémon</SelectItem>
           <SelectItem value="lorcana">Lorcana</SelectItem>
           <SelectItem value="optcg">One Piece</SelectItem>
@@ -53,7 +53,7 @@ export const CardSearchBar = ({ onSearch, loading }: CardSearchBarProps) => {
       </div>
 
       <Button type="submit" disabled={loading || !query.trim()}>
-        Search
+        {loading ? 'Searching...' : 'Search'}
       </Button>
     </form>
   );

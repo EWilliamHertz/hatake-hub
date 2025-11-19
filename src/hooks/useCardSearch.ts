@@ -14,21 +14,30 @@ export const useCardSearch = () => {
     }
 
     setLoading(true);
+    setCards([]); // Clear previous results
+    
     try {
       const result = await searchScryDex(params);
       
-      if (result.success) {
+      if (result.success && result.data.length > 0) {
         setCards(result.data);
         setHasMore(result.has_more);
         toast.success(`Found ${result.count || result.data.length} cards`);
-      } else {
-        toast.error(result.error || 'Search failed');
+      } else if (result.error) {
+        toast.error(result.error);
         setCards([]);
+        setHasMore(false);
+      } else {
+        toast.info('No cards found');
+        setCards([]);
+        setHasMore(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Card search error:', error);
-      toast.error('Failed to search cards. Please try again.');
+      const errorMsg = error?.message || 'Failed to search cards. Please try again.';
+      toast.error(errorMsg);
       setCards([]);
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
