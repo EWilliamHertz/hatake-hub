@@ -9,6 +9,7 @@ import Collection from "./pages/Collection";
 import DeckBuilder from "./pages/DeckBuilder";
 import Marketplace from "./pages/Marketplace";
 import Shop from "./pages/Shop";
+import Messenger from "./pages/Messenger";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import { BottomNav } from "./components/BottomNav";
@@ -28,6 +29,7 @@ const App = () => (
               <Route path="/collection" element={<Collection />} />
               <Route path="/deck-builder" element={<DeckBuilder />} />
               <Route path="/marketplace" element={<Marketplace />} />
+              <Route path="/messages" element={<Messenger />} />
               <Route path="/shop" element={<Shop />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="*" element={<NotFound />} />

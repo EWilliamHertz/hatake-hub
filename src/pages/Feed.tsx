@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Heart, MessageCircle, Share2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import logo from "@/assets/hatake-logo.png";
 
 interface Post {
   id: string;
@@ -104,11 +105,14 @@ const Feed = () => {
       <header className="sticky top-0 z-40 bg-card border-b border-border">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                HatakeSocial
-              </h1>
-              <p className="text-sm text-muted-foreground">Your TCG Community</p>
+            <div className="flex items-center gap-3">
+              <img src={logo} alt="Hatake logo" className="h-8 w-8 rounded" />
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                  HatakeSocial
+                </h1>
+                <p className="text-sm text-muted-foreground">Your TCG Community</p>
+              </div>
             </div>
             <Button variant="ghost" size="sm" onClick={handleSignOut}>
               <LogOut className="h-4 w-4" />

@@ -41,6 +41,10 @@ export const TradingCard = ({
           <img
             src={imageUrl}
             alt={name}
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
             className="w-full h-full object-cover"
           />
         ) : (
