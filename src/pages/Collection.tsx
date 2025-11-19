@@ -37,11 +37,16 @@ interface UserCard {
   game?: string;
   collector_number?: string;
   condition?: string;
+  prices?: {
+    usd?: number | null;
+    usd_foil?: number | null;
+  };
 }
 
 const Collection = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { currency, setCurrency, convertPrice } = useCurrency();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedSet, setSelectedSet] = useState<string>("all");
   const [selectedRarity, setSelectedRarity] = useState<string>("all");
@@ -53,6 +58,7 @@ const Collection = () => {
   const [isCardDetailOpen, setIsCardDetailOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const { cards: searchResults, loading: searchLoading, search } = useCardSearch();
+  const [uniqueSets, setUniqueSets] = useState<string[]>([]);
 
   useEffect(() => {
     if (!user) {
@@ -68,6 +74,7 @@ const Collection = () => {
       q, 
       (snapshot) => {
         const cards: UserCard[] = [];
+        const sets = new Set<string>();
         snapshot.forEach((doc) => {
           const data = doc.data();
           cards.push({
@@ -80,10 +87,13 @@ const Collection = () => {
             quantity: data.quantity || 1,
             game: data.game,
             collector_number: data.collector_number,
-            condition: data.condition
+            condition: data.condition,
+            prices: data.prices
           });
+          if (data.set_name) sets.add(data.set_name);
         });
         setUserCards(cards);
+        setUniqueSets(Array.from(sets).sort());
         setLoading(false);
         setError(null);
       },
@@ -164,14 +174,56 @@ const Collection = () => {
     return true;
   });
 
+  const calculateTotalValue = () => {
+    return userCards.reduce((total, card) => {
+      const price = card.is_foil ? card.prices?.usd_foil : card.prices?.usd;
+      const cardValue = (price || 0) * (card.quantity || 1);
+      return total + cardValue;
+    }, 0);
+  };
+
+  const totalValue = calculateTotalValue();
+  const convertedValue = convertPrice(totalValue);
+
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-card border-b border-border">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold">My Collection</h1>
-            <div className="flex gap-2">
+            <div>
+              <h1 className="text-2xl font-bold">My Collection</h1>
+              <p className="text-sm text-muted-foreground">
+                {filteredCards.length} {filteredCards.length === 1 ? 'card' : 'cards'}
+              </p>
+              {convertedValue !== null && convertedValue > 0 && (
+                <div className="flex items-center gap-2 mt-1">
+                  <DollarSign className="h-4 w-4 text-primary" />
+                  <p className="text-lg font-bold text-primary">
+                    {currency === 'usd' ? '$' : '€'}{convertedValue.toFixed(2)}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1">
+                <Button
+                  variant={currency === 'usd' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setCurrency('usd')}
+                >
+                  USD
+                </Button>
+                <Button
+                  variant={currency === 'eur' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setCurrency('eur')}
+                >
+                  EUR
+                </Button>
+              </div>
+
               <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" className="gap-2">
@@ -271,8 +323,11 @@ const Collection = () => {
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="Set/Edition" />
               </SelectTrigger>
-              <SelectContent className="bg-popover">
+              <SelectContent className="bg-popover max-h-[300px] overflow-y-auto">
                 <SelectItem value="all">All Sets</SelectItem>
+                {uniqueSets.map((set) => (
+                  <SelectItem key={set} value={set}>{set}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
@@ -326,6 +381,8 @@ const Collection = () => {
                 rarity={card.rarity}
                 imageUrl={card.image_uris?.normal || card.image_uris?.small}
                 isFoil={card.is_foil}
+                price={convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd)}
+                currency={currency}
                 className={viewMode === "list" ? "flex" : ""}
               />
             ))}
