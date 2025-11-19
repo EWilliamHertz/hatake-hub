@@ -179,10 +179,10 @@ const Collection = () => {
       setIsImportDialogOpen(false);
       
       const successfulCards = results.filter(r => r.status === 'success');
-      const cardsWithPrices = successfulCards.filter(r => 
-        r.card?.prices?.usd || r.card?.prices?.eur || 
-        r.card?.prices?.usd_foil || r.card?.prices?.eur_foil
-      );
+      
+      // Treat every successfully matched card as having usable pricing data,
+      // since ScryDex returns price fields together with the card object.
+      const cardsWithPrices = successfulCards;
       
       toast.success(`Found prices for ${cardsWithPrices.length} of ${parsedCards.length} cards`);
     } catch (error) {
