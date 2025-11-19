@@ -75,6 +75,7 @@ const Collection = () => {
     set_name: string;
     set_code?: string;
     collector_number?: string;
+    scryfall_id?: string;
     is_foil: boolean;
     rowIndex: number;
   }>>([]);
@@ -167,6 +168,9 @@ const Collection = () => {
       const collectorNumberIndex = headers.findIndex(
         (h) => h === 'collector number' || h === 'collector_number' || h === 'number'
       );
+      const scryfallIdIndex = headers.findIndex(
+        (h) => h === 'scryfall id' || h === 'scryfall_id'
+      );
       const foilIndex = headers.findIndex(h => h.includes('foil') || h.includes('finish'));
 
       if (nameIndex === -1) {
@@ -217,6 +221,7 @@ const Collection = () => {
         const setCode = setCodeIndex >= 0 ? values[setCodeIndex] : "";
         const setName = setNameIndex >= 0 ? values[setNameIndex] : "";
         const collectorNumber = collectorNumberIndex >= 0 ? values[collectorNumberIndex] : "";
+        const scryfallId = scryfallIdIndex >= 0 ? values[scryfallIdIndex] : "";
         const foilValue = foilIndex >= 0 ? (values[foilIndex] || "").toLowerCase() : "";
         const isFoil = foilValue.includes("foil");
 
@@ -227,6 +232,7 @@ const Collection = () => {
           set_name: setName,
           set_code: setCode,
           collector_number: collectorNumber,
+          scryfall_id: scryfallId,
           is_foil: isFoil,
           rowIndex: idx + 2,
         };
@@ -237,6 +243,7 @@ const Collection = () => {
         set_name: string;
         set_code?: string;
         collector_number?: string;
+        scryfall_id?: string;
         is_foil: boolean;
         rowIndex: number;
       }>;
@@ -388,6 +395,16 @@ const Collection = () => {
                                   }
 
                                   let matched: CardResult | null = searchResult.data[0];
+
+                                  // Best: match by Scryfall ID (api_id)
+                                  if (card.scryfall_id) {
+                                    const byScryfallId = searchResult.data.find(
+                                      (c) => c.api_id === card.scryfall_id
+                                    );
+                                    if (byScryfallId) {
+                                      matched = byScryfallId;
+                                    }
+                                  }
 
                                   // Try to match by set code + collector number (most precise)
                                   if (card.set_code && card.collector_number) {
