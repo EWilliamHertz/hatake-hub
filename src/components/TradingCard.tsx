@@ -9,6 +9,8 @@ interface TradingCardProps {
   rarity: string;
   imageUrl?: string;
   isFoil?: boolean;
+  price?: number | null;
+  currency?: 'usd' | 'eur';
   className?: string;
 }
 
@@ -18,6 +20,8 @@ export const TradingCard = ({
   rarity,
   imageUrl,
   isFoil = false,
+  price,
+  currency = 'usd',
   className,
 }: TradingCardProps) => {
   return (
@@ -68,6 +72,11 @@ export const TradingCard = ({
             {rarity}
           </span>
         </div>
+        {price !== undefined && price !== null && (
+          <div className="text-sm font-semibold text-primary">
+            {currency === 'usd' ? '$' : '€'}{price.toFixed(2)}
+          </div>
+        )}
       </div>
     </Card>
   );
