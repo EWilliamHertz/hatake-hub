@@ -27,6 +27,7 @@ export const BulkEditModal = ({ open, onOpenChange, selectedCards, onComplete }:
   const [isFoil, setIsFoil] = useState(false);
   const [updateForSale, setUpdateForSale] = useState(false);
   const [forSale, setForSale] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleBulkUpdate = async () => {
     if (!user || selectedCards.length === 0) return;
@@ -57,6 +58,32 @@ export const BulkEditModal = ({ open, onOpenChange, selectedCards, onComplete }:
     } catch (error) {
       console.error("Error bulk updating cards:", error);
       toast.error("Failed to update cards");
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!user || selectedCards.length === 0) return;
+    const confirm = window.confirm(`Delete ${selectedCards.length} cards from your collection? This cannot be undone.`);
+    if (!confirm) return;
+
+    try {
+      setIsDeleting(true);
+      const batch = writeBatch(db);
+
+      selectedCards.forEach((card) => {
+        const cardRef = doc(db, "users", user.uid, "collection", card.id);
+        batch.delete(cardRef);
+      });
+
+      await batch.commit();
+      toast.success(`Deleted ${selectedCards.length} cards`);
+      onComplete();
+      onOpenChange(false);
+    } catch (error) {
+      console.error("Error bulk deleting cards:", error);
+      toast.error("Failed to delete cards");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -142,13 +169,22 @@ export const BulkEditModal = ({ open, onOpenChange, selectedCards, onComplete }:
           </div>
         </div>
 
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+        <div className="flex items-center justify-between mt-2">
+          <Button
+            variant="destructive"
+            onClick={handleBulkDelete}
+            disabled={isDeleting}
+          >
+            {isDeleting ? "Deleting..." : `Delete ${selectedCards.length} Cards`}
           </Button>
-          <Button onClick={handleBulkUpdate}>
-            Update {selectedCards.length} Cards
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkUpdate}>
+              Update {selectedCards.length} Cards
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

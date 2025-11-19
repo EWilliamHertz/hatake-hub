@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, writeBatch, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { TradingCard } from "@/components/TradingCard";
 import { CardSearchBar } from "@/components/CardSearchBar";
@@ -67,6 +67,15 @@ const Collection = () => {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const [csvPreviewCards, setCsvPreviewCards] = useState<Array<{
+    id: string;
+    name: string;
+    quantity: number;
+    set_name: string;
+    is_foil: boolean;
+    rowIndex: number;
+  }>>([]);
+  const [isCsvReviewOpen, setIsCsvReviewOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -137,7 +146,11 @@ const Collection = () => {
     try {
       const text = await file.text();
       const lines = text.split('\n').filter(line => line.trim());
-      
+      if (lines.length <= 1) {
+        toast.error('CSV appears to be empty');
+        return;
+      }
+
       // Parse CSV header
       const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
       const nameIndex = headers.findIndex(h => h.includes('name') || h === 'card name');
@@ -150,25 +163,41 @@ const Collection = () => {
         return;
       }
 
-      let imported = 0;
-      const errors: string[] = [];
+      const parsedCards = lines.slice(1).map((line, idx) => {
+        const values = line.split(',').map(v => v.trim());
+        const name = values[nameIndex];
+        if (!name) return null;
 
-      for (let i = 1; i < lines.length; i++) {
-        const values = lines[i].split(',').map(v => v.trim());
-        const cardName = values[nameIndex];
-        
-        if (!cardName) continue;
+        const quantityRaw = quantityIndex >= 0 ? values[quantityIndex] : '1';
+        const quantity = parseInt(quantityRaw || '1', 10) || 1;
+        const setName = setIndex >= 0 ? values[setIndex] : '';
+        const foilValue = foilIndex >= 0 ? (values[foilIndex] || '').toLowerCase() : '';
+        const isFoil = foilValue.includes('foil');
 
-        try {
-          // You could enhance this to actually search and add the cards
-          // For now, just count how many we would import
-          imported++;
-        } catch (error) {
-          errors.push(`Line ${i + 1}: ${cardName}`);
-        }
+        return {
+          id: `${name}-${idx}`,
+          name,
+          quantity,
+          set_name: setName,
+          is_foil: isFoil,
+          rowIndex: idx + 2,
+        };
+      }).filter(Boolean) as Array<{
+        id: string;
+        name: string;
+        quantity: number;
+        set_name: string;
+        is_foil: boolean;
+        rowIndex: number;
+      }>;
+
+      if (parsedCards.length === 0) {
+        toast.error('No valid cards found in CSV');
+        return;
       }
 
-      toast.success(`Parsed ${imported} cards from CSV. Click on search results to add them.`);
+      setCsvPreviewCards(parsedCards);
+      setIsCsvReviewOpen(true);
       setIsImportDialogOpen(false);
     } catch (error) {
       console.error('CSV import error:', error);
@@ -247,6 +276,75 @@ const Collection = () => {
                       accept=".csv"
                       onChange={handleImportCSV}
                     />
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              {/* CSV Review Modal */}
+              <Dialog open={isCsvReviewOpen} onOpenChange={setIsCsvReviewOpen}>
+                <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Review CSV Import</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      {csvPreviewCards.length} cards detected. Remove any you don't want to import, then finalize.
+                    </p>
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                      {csvPreviewCards.map((card) => (
+                        <Card key={card.id} className="p-3 flex items-center justify-between gap-3">
+                          <div className="space-y-1">
+                            <p className="font-medium text-sm">{card.name}</p>
+                            {card.set_name && (
+                              <p className="text-xs text-muted-foreground">{card.set_name}</p>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                              Row {card.rowIndex} • Qty: {card.quantity} • {card.is_foil ? 'Foil' : 'Non-foil'}
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCsvPreviewCards(prev => prev.filter(c => c.id !== card.id))}
+                          >
+                            Remove
+                          </Button>
+                        </Card>
+                      ))}
+                    </div>
+                    <div className="flex justify-between items-center pt-2">
+                      <p className="text-xs text-muted-foreground">
+                        Only basic info (name, quantity, set, foil) will be saved. You can refine cards later via edit.
+                      </p>
+                      <Button
+                        disabled={csvPreviewCards.length === 0}
+                        onClick={async () => {
+                          if (!user) return;
+                          try {
+                            const batch = writeBatch(db);
+                            csvPreviewCards.forEach((card) => {
+                              const docRef = doc(collection(db, 'users', user.uid, 'collection'));
+                              batch.set(docRef, {
+                                name: card.name,
+                                set_name: card.set_name,
+                                quantity: card.quantity,
+                                is_foil: card.is_foil,
+                                addedAt: new Date().toISOString(),
+                              });
+                            });
+                            await batch.commit();
+                            toast.success(`Imported ${csvPreviewCards.length} cards into your collection`);
+                            setCsvPreviewCards([]);
+                            setIsCsvReviewOpen(false);
+                          } catch (error) {
+                            console.error('CSV finalize error:', error);
+                            toast.error('Failed to import cards');
+                          }
+                        }}
+                      >
+                        Import {csvPreviewCards.length} Cards
+                      </Button>
+                    </div>
                   </div>
                 </DialogContent>
               </Dialog>
