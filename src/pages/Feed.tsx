@@ -23,6 +23,8 @@ const Feed = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -34,13 +36,23 @@ const Feed = () => {
     const postsRef = collection(db, 'posts');
     const q = query(postsRef, orderBy('timestamp', 'desc'), limit(50));
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const postsData: Post[] = [];
-      snapshot.forEach((doc) => {
-        postsData.push({ id: doc.id, ...doc.data() } as Post);
-      });
-      setPosts(postsData);
-    });
+    const unsubscribe = onSnapshot(
+      q, 
+      (snapshot) => {
+        const postsData: Post[] = [];
+        snapshot.forEach((doc) => {
+          postsData.push({ id: doc.id, ...doc.data() } as Post);
+        });
+        setPosts(postsData);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error('Feed error:', err);
+        setError(err.message);
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [user, navigate]);
@@ -80,7 +92,16 @@ const Feed = () => {
 
       {/* Feed */}
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        {posts.length === 0 ? (
+        {loading ? (
+          <Card className="p-8 text-center">
+            <p className="text-muted-foreground">Loading feed...</p>
+          </Card>
+        ) : error ? (
+          <Card className="p-8 text-center">
+            <p className="text-destructive mb-2">Error loading feed</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </Card>
+        ) : posts.length === 0 ? (
           <Card className="p-8 text-center">
             <p className="text-muted-foreground">No posts yet. Be the first to share!</p>
           </Card>

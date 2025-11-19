@@ -22,6 +22,8 @@ const Shop = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -33,13 +35,23 @@ const Shop = () => {
     const productsRef = collection(db, 'products');
     const q = query(productsRef, where('stock', '>', 0));
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const productsData: Product[] = [];
-      snapshot.forEach((doc) => {
-        productsData.push({ id: doc.id, ...doc.data() } as Product);
-      });
-      setProducts(productsData);
-    });
+    const unsubscribe = onSnapshot(
+      q, 
+      (snapshot) => {
+        const productsData: Product[] = [];
+        snapshot.forEach((doc) => {
+          productsData.push({ id: doc.id, ...doc.data() } as Product);
+        });
+        setProducts(productsData);
+        setLoading(false);
+        setError(null);
+      },
+      (err) => {
+        console.error('Shop error:', err);
+        setError(err.message);
+        setLoading(false);
+      }
+    );
 
     return () => unsubscribe();
   }, [user, navigate]);
@@ -64,7 +76,16 @@ const Shop = () => {
 
       {/* Products Grid */}
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {products.length === 0 ? (
+        {loading ? (
+          <Card className="p-8 text-center">
+            <p className="text-muted-foreground">Loading products...</p>
+          </Card>
+        ) : error ? (
+          <Card className="p-8 text-center">
+            <p className="text-destructive mb-2">Error loading shop</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </Card>
+        ) : products.length === 0 ? (
           <Card className="p-8 text-center">
             <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <p className="text-muted-foreground">No products available</p>
