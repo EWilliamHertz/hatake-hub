@@ -461,6 +461,10 @@ const Collection = () => {
                             results.forEach(({ card, matchedCard }) => {
                               const docRef = doc(collection(db, 'users', user.uid, 'collection'));
 
+                              console.log(`CSV Import - Card: ${card.name}, Matched:`, !!matchedCard, 
+                                matchedCard ? `Set: ${matchedCard.set_name}, Prices:` : 'No match', 
+                                matchedCard?.prices);
+
                               const data: any = {
                                 name: matchedCard?.name || card.name,
                                 set_name: matchedCard?.set_name || card.set_name,
@@ -496,14 +500,21 @@ const Collection = () => {
                                 data.image_uris = matchedCard.image_uris
                                   ? matchedCard.image_uris
                                   : {
-                                      small: matchedCard.images[0]?.small || '',
-                                      normal: matchedCard.images[0]?.medium || '',
-                                      large: matchedCard.images[0]?.large || '',
+                                      small: matchedCard.images?.[0]?.small || '',
+                                      normal: matchedCard.images?.[0]?.medium || '',
+                                      large: matchedCard.images?.[0]?.large || '',
                                     };
                               }
 
+                              // CRITICAL: Copy prices from matched card
                               if (matchedCard?.prices) {
-                                data.prices = matchedCard.prices;
+                                console.log(`  -> Copying prices for ${card.name}:`, matchedCard.prices);
+                                data.prices = {
+                                  usd: matchedCard.prices.usd ?? null,
+                                  usd_foil: matchedCard.prices.usd_foil ?? null,
+                                };
+                              } else {
+                                console.warn(`  -> No prices found for ${card.name}`);
                               }
 
                               batch.set(docRef, data);
