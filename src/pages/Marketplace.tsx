@@ -28,6 +28,10 @@ interface MarketplaceListing {
       normal: string;
       large: string;
     };
+    prices?: {
+      usd?: number | null;
+      usd_foil?: number | null;
+    };
   };
   sellerId: string;
   sellerData: {
@@ -37,7 +41,10 @@ interface MarketplaceListing {
   price: number;
   condition: string;
   isFoil: boolean;
+  game?: string;
+  currency?: string;
 }
+
 
 const Marketplace = () => {
   const { user } = useAuth();
@@ -49,6 +56,9 @@ const Marketplace = () => {
   const [isOfferDialogOpen, setIsOfferDialogOpen] = useState(false);
   const [filterGame, setFilterGame] = useState<string>("all");
   const [filterRarity, setFilterRarity] = useState<string>("all");
+  const [filterCondition, setFilterCondition] = useState<string>("all");
+  const [minPrice, setMinPrice] = useState<string>("");
+  const [maxPrice, setMaxPrice] = useState<string>("");
 
   useEffect(() => {
     if (!user) {
@@ -56,9 +66,9 @@ const Marketplace = () => {
       return;
     }
 
-    // Listen to marketplace listings in real-time (Firestorm collection: marketplaceListings)
+    // Listen to marketplace listings in real-time (Firestore collection: marketplaceListings)
     const marketplaceRef = collection(db, 'marketplaceListings');
-    const q = query(marketplaceRef, orderBy('timestamp', 'desc'), limit(50));
+    const q = query(marketplaceRef, orderBy('listedAt', 'desc'), limit(50));
     
     const unsubscribe = onSnapshot(
       q, 
@@ -87,10 +97,21 @@ const Marketplace = () => {
   };
 
   const filteredListings = listings.filter((listing) => {
-    const gameMatch = filterGame === "all" || listing.cardData.name.toLowerCase().includes(filterGame.toLowerCase());
+    const gameValue = (listing.game || (listing.cardData as any).game || "").toLowerCase();
+    const gameMatch = filterGame === "all" || gameValue === filterGame.toLowerCase();
     const rarityMatch = filterRarity === "all" || listing.cardData.rarity.toLowerCase() === filterRarity.toLowerCase();
-    return gameMatch && rarityMatch;
+    const conditionMatch = filterCondition === "all" || listing.condition.toLowerCase() === filterCondition.toLowerCase();
+    const price = listing.price;
+    const min = minPrice ? parseFloat(minPrice) : null;
+    const max = maxPrice ? parseFloat(maxPrice) : null;
+    const minMatch = min === null || price >= min;
+    const maxMatch = max === null || price <= max;
+    return gameMatch && rarityMatch && conditionMatch && minMatch && maxMatch;
   });
+
+  const totalListings = filteredListings.length;
+  const totalValue = filteredListings.reduce((sum, l) => sum + (l.price || 0), 0);
+  const averagePrice = totalListings > 0 ? totalValue / totalListings : 0;
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -112,23 +133,67 @@ const Marketplace = () => {
               Secure Transactions
             </Badge>
           </div>
-          <div className="flex gap-2">
-            <Select value={filterRarity} onValueChange={setFilterRarity}>
-              <SelectTrigger className="w-[140px]">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Rarity" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Rarities</SelectItem>
-                <SelectItem value="common">Common</SelectItem>
-                <SelectItem value="uncommon">Uncommon</SelectItem>
-                <SelectItem value="rare">Rare</SelectItem>
-                <SelectItem value="mythic">Mythic</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex gap-2 items-center">
+              <Select value={filterRarity} onValueChange={setFilterRarity}>
+                <SelectTrigger className="w-[140px]">
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Rarity" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Rarities</SelectItem>
+                  <SelectItem value="common">Common</SelectItem>
+                  <SelectItem value="uncommon">Uncommon</SelectItem>
+                  <SelectItem value="rare">Rare</SelectItem>
+                  <SelectItem value="mythic">Mythic</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={filterGame} onValueChange={setFilterGame}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Game" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Games</SelectItem>
+                  <SelectItem value="mtg">Magic: The Gathering</SelectItem>
+                  <SelectItem value="pokemon">Pokémon</SelectItem>
+                  <SelectItem value="yugioh">Yu-Gi-Oh!</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={filterCondition} onValueChange={setFilterCondition}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Condition" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Conditions</SelectItem>
+                  <SelectItem value="near_mint">Near Mint</SelectItem>
+                  <SelectItem value="lightly_played">Lightly Played</SelectItem>
+                  <SelectItem value="moderately_played">Moderately Played</SelectItem>
+                  <SelectItem value="heavily_played">Heavily Played</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                className="h-10 w-24 rounded-md border border-border bg-background px-2 text-sm"
+                placeholder="Min"
+                value={minPrice}
+                onChange={(e) => setMinPrice(e.target.value)}
+              />
+              <input
+                type="number"
+                className="h-10 w-24 rounded-md border border-border bg-background px-2 text-sm"
+                placeholder="Max"
+                value={maxPrice}
+                onChange={(e) => setMaxPrice(e.target.value)}
+              />
+            </div>
           </div>
-        </div>
-      </header>
+          <div className="mt-4 flex flex-wrap gap-4 text-sm text-muted-foreground">
+            <span>{totalListings} listings</span>
+            <span>Average price: ${averagePrice.toFixed(2)}</span>
+            <span>Total value: ${totalValue.toFixed(2)}</span>
+          </div>
 
       {/* Marketplace Grid */}
       <div className="max-w-7xl mx-auto px-4 py-6">
