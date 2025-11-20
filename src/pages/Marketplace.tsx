@@ -56,8 +56,8 @@ const Marketplace = () => {
       return;
     }
 
-    // Listen to marketplace listings in real-time
-    const marketplaceRef = collection(db, 'marketplace');
+    // Listen to marketplace listings in real-time (Firestorm collection: marketplaceListings)
+    const marketplaceRef = collection(db, 'marketplaceListings');
     const q = query(marketplaceRef, orderBy('timestamp', 'desc'), limit(50));
     
     const unsubscribe = onSnapshot(
