@@ -194,6 +194,8 @@ const Marketplace = () => {
             <span>Average price: ${averagePrice.toFixed(2)}</span>
             <span>Total value: ${totalValue.toFixed(2)}</span>
           </div>
+        </div>
+      </header>
 
       {/* Marketplace Grid */}
       <div className="max-w-7xl mx-auto px-4 py-6">
