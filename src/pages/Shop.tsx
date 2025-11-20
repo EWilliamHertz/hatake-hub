@@ -25,7 +25,7 @@ interface Product {
 
 const Shop = () => {
   const { user } = useAuth();
-  const { addToCart, totalItems } = useCart();
+  const { addToCart, totalItems, items: cartItems } = useCart();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,10 +86,62 @@ const Shop = () => {
   };
 
   const handleCheckout = async () => {
+    if (cartItems.length === 0) {
+      toast.error('Your cart is empty');
+      return;
+    }
+
     setCheckoutLoading(true);
-    toast.info('Checkout functionality coming soon!');
-    setCheckoutLoading(false);
-    // TODO: Implement multi-item Stripe checkout
+    setCartOpen(false);
+
+    try {
+      // Create line items for Stripe from cart
+      const lineItems = cartItems.map(item => {
+        const product = products.find(p => p.id === item.productId);
+        if (!product?.stripePriceId) {
+          throw new Error(`Product ${item.name} is not configured for checkout`);
+        }
+        return {
+          price: product.stripePriceId,
+          quantity: item.quantity,
+        };
+      });
+
+      // Call Firebase function for Stripe checkout
+      const response = await fetch('https://us-central1-hatakesocial-88b5e.cloudfunctions.net/createStripeCheckout', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          lineItems,
+          successUrl: window.location.origin + '/shop?success=true',
+          cancelUrl: window.location.origin + '/shop?canceled=true',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create checkout session');
+      }
+
+      const session = await response.json();
+      
+      if (session.error) {
+        throw new Error(session.error);
+      }
+
+      // Redirect to Stripe Checkout
+      if (session.url) {
+        window.location.href = session.url;
+      } else {
+        throw new Error('No checkout URL received');
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to start checkout');
+      setCheckoutLoading(false);
+    }
   };
 
   return (
