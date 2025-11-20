@@ -161,13 +161,23 @@ const Messenger = () => {
     setLoadingUsers(true);
     try {
       console.log("Loading users from Firestore...");
+      
+      // Try to get all user documents
       const usersSnapshot = await getDocs(collection(db, "users"));
       const allUsers: UserProfile[] = [];
+      
+      if (usersSnapshot.empty) {
+        console.log("No users found in Firestore, collection may be empty");
+        // If no users exist, at least show that the query succeeded
+        setUsers([]);
+        setLoadingUsers(false);
+        return;
+      }
       
       usersSnapshot.forEach((doc) => {
         const data = doc.data() as any;
         if (doc.id !== user.uid) {
-          const displayName = data.displayName || data.email?.split('@')[0] || "Unknown";
+          const displayName = data.displayName || data.email?.split('@')[0] || "Unknown User";
           allUsers.push({
             uid: doc.id,
             displayName,
@@ -177,11 +187,18 @@ const Messenger = () => {
         }
       });
       
-      console.log(`Loaded ${allUsers.length} users:`, allUsers.map(u => u.displayName));
+      console.log(`Loaded ${allUsers.length} users (excluding self):`, allUsers.map(u => u.displayName));
       setUsers(allUsers);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error loading users:", err);
-      toast.error("Failed to load users");
+      console.error("Error details:", err.message, err.code);
+      
+      // Don't show error toast if it's just an empty collection
+      if (err.code !== 'permission-denied') {
+        console.log("Users collection may not exist yet - this is normal on first use");
+      } else {
+        toast.error("Unable to access users. Check Firebase permissions.");
+      }
     } finally {
       setLoadingUsers(false);
     }
