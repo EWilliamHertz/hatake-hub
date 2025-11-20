@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCart } from "@/contexts/CartContext";
 import { useNavigate } from "react-router-dom";
 import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { db, functions } from "@/lib/firebase";
-import { httpsCallable } from "firebase/functions";
+import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ShoppingCart, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { CartDialog } from "@/components/CartDialog";
 import { toast } from "sonner";
 
 interface Product {
@@ -24,11 +25,13 @@ interface Product {
 
 const Shop = () => {
   const { user } = useAuth();
+  const { addToCart, totalItems } = useCart();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -72,50 +75,21 @@ const Shop = () => {
     return () => unsubscribe();
   }, [user, navigate]);
 
-  const handleCheckout = async (product: Product) => {
-    if (!product.stripePriceId) {
-      toast.error('This product is not available for checkout');
-      return;
-    }
+  const handleAddToCart = (product: Product) => {
+    addToCart({
+      productId: product.id,
+      name: product.name,
+      price: product.price,
+      imageUrl: product.galleryImageUrls?.[0],
+    });
+    toast.success(`${product.name} added to cart`);
+  };
 
-    setCheckoutLoading(product.id);
-    try {
-      // Call Firebase function directly using fetch (matching GeminiHatake pattern)
-      const response = await fetch('https://us-central1-hatakesocial-88b5e.cloudfunctions.net/createStripeCheckout', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          priceId: product.stripePriceId,
-          quantity: 1,
-          successUrl: window.location.origin + '/shop?success=true',
-          cancelUrl: window.location.origin + '/shop?canceled=true',
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create checkout session');
-      }
-
-      const session = await response.json();
-      
-      if (session.error) {
-        throw new Error(session.error);
-      }
-
-      // Redirect to Stripe Checkout URL
-      if (session.url) {
-        window.location.href = session.url;
-      } else {
-        throw new Error('No checkout URL received');
-      }
-    } catch (error) {
-      console.error('Checkout error:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to start checkout. Please try again.');
-      setCheckoutLoading(null);
-    }
+  const handleCheckout = async () => {
+    setCheckoutLoading(true);
+    toast.info('Checkout functionality coming soon!');
+    setCheckoutLoading(false);
+    // TODO: Implement multi-item Stripe checkout
   };
 
   return (
@@ -128,9 +102,19 @@ const Shop = () => {
               <h1 className="text-2xl font-bold">TCG Shop</h1>
               <p className="text-sm text-muted-foreground">Official HatakeSocial Products</p>
             </div>
-            <Button variant="outline" size="sm" className="gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="gap-2 relative"
+              onClick={() => setCartOpen(true)}
+            >
               <ShoppingCart className="h-4 w-4" />
               Cart
+              {totalItems > 0 && (
+                <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center">
+                  {totalItems}
+                </Badge>
+              )}
             </Button>
           </div>
         </div>
@@ -195,9 +179,9 @@ const Shop = () => {
                     </span>
                     <Button
                       size="sm"
-                      onClick={() => handleCheckout(product)}
-                      disabled={checkoutLoading === product.id}
-                   >
+                      onClick={() => handleAddToCart(product)}
+                      disabled={checkoutLoading}
+                    >
                       <ShoppingCart className="h-4 w-4" />
                     </Button>
                   </div>
@@ -207,6 +191,12 @@ const Shop = () => {
           </div>
         )}
       </div>
+
+      <CartDialog 
+        open={cartOpen} 
+        onOpenChange={setCartOpen}
+        onCheckout={handleCheckout}
+      />
     </div>
   );
 };

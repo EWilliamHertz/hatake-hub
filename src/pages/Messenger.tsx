@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Search } from "lucide-react";
+import { toast } from "sonner";
 
 interface Chat {
   id: string;
@@ -56,6 +57,7 @@ const Messenger = () => {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -156,6 +158,7 @@ const Messenger = () => {
   const loadUsers = async () => {
     if (!user) return;
     
+    setLoadingUsers(true);
     try {
       console.log("Loading users from Firestore...");
       const usersSnapshot = await getDocs(collection(db, "users"));
@@ -178,6 +181,9 @@ const Messenger = () => {
       setUsers(allUsers);
     } catch (err) {
       console.error("Error loading users:", err);
+      toast.error("Failed to load users");
+    } finally {
+      setLoadingUsers(false);
     }
   };
 
@@ -301,9 +307,13 @@ const Messenger = () => {
                   />
                 </div>
                 <div className="max-h-[400px] overflow-y-auto space-y-2">
-                  {filteredUsers.length === 0 ? (
+                  {loadingUsers ? (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      {searchQuery ? "No users found" : "Loading users..."}
+                      Loading users...
+                    </div>
+                  ) : filteredUsers.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      {searchQuery ? `No users found matching "${searchQuery}"` : "No users available"}
                     </div>
                   ) : (
                     filteredUsers.map((u) => (
