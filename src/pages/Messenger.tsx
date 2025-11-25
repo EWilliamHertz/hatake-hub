@@ -24,7 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 
-interface Chat {
+interface Conversation {
   id: string;
   participants: string[];
   lastMessage?: string;
@@ -50,9 +50,9 @@ interface UserProfile {
 const Messenger = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [chats, setChats] = useState<Chat[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState("");
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -86,14 +86,14 @@ const Messenger = () => {
     };
     ensureUserProfile();
 
-    const chatsRef = collection(db, "chats");
-    const q = query(chatsRef, where("participants", "array-contains", user.uid));
+    const conversationsRef = collection(db, "conversations");
+    const q = query(conversationsRef, where("participants", "array-contains", user.uid));
 
     const unsub = onSnapshot(q, async (snapshot) => {
-      const data: Chat[] = [];
+      const data: Conversation[] = [];
       
-      for (const chatDoc of snapshot.docs) {
-        const d = chatDoc.data() as DocumentData;
+      for (const conversationDoc of snapshot.docs) {
+        const d = conversationDoc.data() as DocumentData;
         const participants = d.participants || [];
         const otherUserId = participants.find((id: string) => id !== user.uid);
         
@@ -114,7 +114,7 @@ const Messenger = () => {
         }
         
         data.push({
-          id: chatDoc.id,
+          id: conversationDoc.id,
           participants,
           lastMessage: d.lastMessage || "",
           updatedAt: d.updatedAt,
@@ -123,19 +123,19 @@ const Messenger = () => {
         });
       }
       
-      setChats(data);
+      setConversations(data);
     });
 
     return () => unsub();
   }, [user, navigate]);
 
   useEffect(() => {
-    if (!user || !activeChatId) {
+    if (!user || !activeConversationId) {
       setMessages([]);
       return;
     }
 
-    const messagesRef = collection(db, "chats", activeChatId, "messages");
+    const messagesRef = collection(db, "conversations", activeConversationId, "messages");
     const q = query(messagesRef, orderBy("createdAt", "asc"));
 
     const unsub = onSnapshot(q, (snapshot) => {
@@ -153,52 +153,55 @@ const Messenger = () => {
     });
 
     return () => unsub();
-  }, [user, activeChatId]);
+  }, [user, activeConversationId]);
 
   const loadUsers = async () => {
     if (!user) return;
     
     setLoadingUsers(true);
     try {
-      console.log("Loading users from Firestore...");
+      console.log("Loading users from conversations...");
       
-      // Try to get all user documents
-      const usersSnapshot = await getDocs(collection(db, "users"));
-      const allUsers: UserProfile[] = [];
+      // Get all users from existing conversations
+      const conversationsRef = collection(db, "conversations");
+      const q = query(conversationsRef, where("participants", "array-contains", user.uid));
+      const conversationsSnapshot = await getDocs(q);
       
-      if (usersSnapshot.empty) {
-        console.log("No users found in Firestore, collection may be empty");
-        // If no users exist, at least show that the query succeeded
-        setUsers([]);
-        setLoadingUsers(false);
-        return;
-      }
-      
-      usersSnapshot.forEach((doc) => {
-        const data = doc.data() as any;
-        if (doc.id !== user.uid) {
-          const displayName = data.displayName || data.email?.split('@')[0] || "Unknown User";
-          allUsers.push({
-            uid: doc.id,
-            displayName,
-            photoURL: (data.photoURL || "") as string,
-            email: (data.email || "") as string,
-          });
-        }
+      const userIds = new Set<string>();
+      conversationsSnapshot.forEach((doc) => {
+        const participants = doc.data().participants || [];
+        participants.forEach((id: string) => {
+          if (id !== user.uid) {
+            userIds.add(id);
+          }
+        });
       });
       
-      console.log(`Loaded ${allUsers.length} users (excluding self):`, allUsers.map(u => u.displayName));
+      // Fetch user profiles
+      const allUsers: UserProfile[] = [];
+      for (const userId of userIds) {
+        try {
+          const userDoc = await getDoc(doc(db, "users", userId));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            const displayName = data.displayName || data.email?.split('@')[0] || "Unknown User";
+            allUsers.push({
+              uid: userDoc.id,
+              displayName,
+              photoURL: (data.photoURL || "") as string,
+              email: (data.email || "") as string,
+            });
+          }
+        } catch (err) {
+          console.error(`Error fetching user ${userId}:`, err);
+        }
+      }
+      
+      console.log(`Loaded ${allUsers.length} users from conversations:`, allUsers.map(u => u.displayName));
       setUsers(allUsers);
     } catch (err: any) {
       console.error("Error loading users:", err);
-      console.error("Error details:", err.message, err.code);
-      
-      // Don't show error toast if it's just an empty collection
-      if (err.code !== 'permission-denied') {
-        console.log("Users collection may not exist yet - this is normal on first use");
-      } else {
-        toast.error("Unable to access users. Check Firebase permissions.");
-      }
+      toast.error("Failed to load users from conversations");
     } finally {
       setLoadingUsers(false);
     }
@@ -208,56 +211,57 @@ const Messenger = () => {
     if (!user) return;
 
     try {
-      // Check if chat already exists
-      const chatsRef = collection(db, "chats");
-      const q = query(chatsRef, where("participants", "array-contains", user.uid));
+      // Check if conversation already exists
+      const conversationsRef = collection(db, "conversations");
+      const q = query(conversationsRef, where("participants", "array-contains", user.uid));
       const snapshot = await getDocs(q);
       
-      let existingChatId: string | null = null;
+      let existingConversationId: string | null = null;
       
       snapshot.forEach((doc) => {
         const participants = doc.data().participants || [];
         if (participants.includes(otherUser.uid)) {
-          existingChatId = doc.id;
+          existingConversationId = doc.id;
         }
       });
       
-      if (existingChatId) {
-        setActiveChatId(existingChatId);
+      if (existingConversationId) {
+        setActiveConversationId(existingConversationId);
         setIsNewChatOpen(false);
         return;
       }
       
-      // Create new chat
-      const newChatRef = await addDoc(collection(db, "chats"), {
+      // Create new conversation
+      const newConversationRef = await addDoc(collection(db, "conversations"), {
         participants: [user.uid, otherUser.uid],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         lastMessage: "",
       });
       
-      setActiveChatId(newChatRef.id);
+      setActiveConversationId(newConversationRef.id);
       setIsNewChatOpen(false);
     } catch (err) {
-      console.error("Error creating chat:", err);
+      console.error("Error creating conversation:", err);
+      toast.error("Failed to start conversation");
     }
   };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !activeChatId || !newMessage.trim()) return;
+    if (!user || !activeConversationId || !newMessage.trim()) return;
 
     try {
-      const messagesRef = collection(db, "chats", activeChatId, "messages");
+      const messagesRef = collection(db, "conversations", activeConversationId, "messages");
       await addDoc(messagesRef, {
         text: newMessage.trim(),
         senderId: user.uid,
         createdAt: serverTimestamp(),
       });
 
-      // Update chat's last message
+      // Update conversation's last message
       await setDoc(
-        doc(db, "chats", activeChatId),
+        doc(db, "conversations", activeConversationId),
         {
           lastMessage: newMessage.trim(),
           updatedAt: serverTimestamp(),
@@ -268,6 +272,7 @@ const Messenger = () => {
       setNewMessage("");
     } catch (err) {
       console.error("Error sending message:", err);
+      toast.error("Failed to send message");
     }
   };
 
@@ -358,30 +363,30 @@ const Messenger = () => {
           </Dialog>
         </div>
         <div className="overflow-y-auto h-[calc(100vh-5rem)]">
-          {chats.map((chat) => (
+          {conversations.map((conversation) => (
             <button
-              key={chat.id}
-              onClick={() => setActiveChatId(chat.id)}
+              key={conversation.id}
+              onClick={() => setActiveConversationId(conversation.id)}
               className={`w-full text-left px-4 py-3 border-b border-border flex items-center gap-3 hover:bg-muted ${
-                activeChatId === chat.id ? "bg-muted" : ""
+                activeConversationId === conversation.id ? "bg-muted" : ""
               }`}
             >
               <Avatar className="h-8 w-8">
-                <AvatarImage src={chat.otherUserPhotoURL} />
+                <AvatarImage src={conversation.otherUserPhotoURL} />
                 <AvatarFallback>
-                  {(chat.otherUserName || "?").slice(0, 2).toUpperCase()}
+                  {(conversation.otherUserName || "?").slice(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {chat.otherUserName || "Chat"}
+                  {conversation.otherUserName || "Chat"}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {chat.lastMessage}
+                  {conversation.lastMessage}
                 </p>
               </div>
               <span className="text-[10px] text-muted-foreground">
-                {formatTime(chat.updatedAt)}
+                {formatTime(conversation.updatedAt)}
               </span>
             </button>
           ))}
@@ -441,7 +446,7 @@ const Messenger = () => {
           </Dialog>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
-          {activeChatId ? (
+          {activeConversationId ? (
             messages.map((msg) => (
               <div
                 key={msg.id}
@@ -465,12 +470,12 @@ const Messenger = () => {
             ))
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-              Select a chat to start messaging.
+              Select a conversation to start messaging.
             </div>
           )}
         </div>
 
-        {activeChatId && (
+        {activeConversationId && (
           <form
             onSubmit={handleSend}
             className="border-t border-border px-3 py-2 flex gap-2"
