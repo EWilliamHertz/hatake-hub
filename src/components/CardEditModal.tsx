@@ -102,18 +102,27 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
 
     setSaving(true);
     try {
-      const collectionRef = doc(db, 'users', user.uid, 'collection', cardId);
+      // Sanitize card ID to prevent path issues with slashes
+      const safeCardId = cardId.replace(/\//g, '-');
+      const collectionRef = doc(db, 'users', user.uid, 'collection', safeCardId);
+
+      // Helper to safely parse numbers, preventing NaN
+      const safeFloat = (val: string) => {
+        if (!val || val.trim() === '') return null;
+        const parsed = parseFloat(val);
+        return isNaN(parsed) ? null : parsed;
+      };
 
       const cardData = {
-        api_id: card.api_id || card.id || cardId,
+        api_id: card.api_id || card.id || safeCardId,
         name: card.name,
         set_name: card.set_name,
-        rarity: card.rarity,
-        collector_number: card.collector_number || '',
+        rarity: card.rarity ?? null,
+        collector_number: card.collector_number ?? null,
         image_uris: card.image_uris || {
-          small: card.images?.[0]?.small || '',
-          normal: card.images?.[0]?.medium || '',
-          large: card.images?.[0]?.large || ''
+          small: card.images?.[0]?.small ?? '',
+          normal: card.images?.[0]?.medium ?? '',
+          large: card.images?.[0]?.large ?? ''
         },
         quantity,
         condition,
@@ -122,11 +131,16 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
         is_signed: isSigned,
         is_altered: isAltered,
         is_graded: isGraded,
-        grading_company: isGraded ? gradingCompany : null,
-        grade: isGraded ? parseFloat(grade) : null,
-        purchase_price: purchasePrice ? parseFloat(purchasePrice) : null,
-        prices: card.prices || {},
-        game: card.game || 'mtg',
+        grading_company: isGraded ? (gradingCompany || null) : null,
+        grade: isGraded ? safeFloat(grade) : null,
+        purchase_price: safeFloat(purchasePrice),
+        prices: {
+          usd: card.prices?.usd ?? null,
+          usd_foil: card.prices?.usd_foil ?? null,
+          eur: card.prices?.eur ?? null,
+          eur_foil: card.prices?.eur_foil ?? null,
+        },
+        game: card.game ?? 'mtg',
         addedAt: new Date(),
         priceLastUpdated: new Date().toISOString(),
       };

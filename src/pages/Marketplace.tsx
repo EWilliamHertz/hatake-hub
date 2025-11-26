@@ -111,7 +111,9 @@ const Marketplace = () => {
     const rarityMatch = filterRarity === "all" || listing.cardData.rarity.toLowerCase() === filterRarity.toLowerCase();
     const conditionMatch = filterCondition === "all" || listing.condition.toLowerCase() === filterCondition.toLowerCase();
     const setMatch = filterSet === "all" || listing.cardData.set_name === filterSet;
-    const foilMatch = !filterFoilOnly || listing.isFoil;
+    // Fix foil filter to check all possible foil fields
+    const isFoilCard = listing.isFoil || listing.is_foil || listing.foil || listing.cardData?.is_foil || listing.cardData?.foil || false;
+    const foilMatch = !filterFoilOnly || isFoilCard;
     const price = listing.price;
     const min = minPrice ? parseFloat(minPrice) : null;
     const max = maxPrice ? parseFloat(maxPrice) : null;
