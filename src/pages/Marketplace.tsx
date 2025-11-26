@@ -6,6 +6,7 @@ import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Shield, TrendingUp, Clock, Filter } from "lucide-react";
 import { TradingCard } from "@/components/TradingCard";
 import { TradeOfferDialog } from "@/components/TradeOfferDialog";
@@ -57,6 +58,8 @@ const Marketplace = () => {
   const [filterGame, setFilterGame] = useState<string>("all");
   const [filterRarity, setFilterRarity] = useState<string>("all");
   const [filterCondition, setFilterCondition] = useState<string>("all");
+  const [filterSet, setFilterSet] = useState<string>("all");
+  const [filterFoilOnly, setFilterFoilOnly] = useState<boolean>(false);
   const [minPrice, setMinPrice] = useState<string>("");
   const [maxPrice, setMaxPrice] = useState<string>("");
 
@@ -101,13 +104,17 @@ const Marketplace = () => {
     const gameMatch = filterGame === "all" || gameValue === filterGame.toLowerCase();
     const rarityMatch = filterRarity === "all" || listing.cardData.rarity.toLowerCase() === filterRarity.toLowerCase();
     const conditionMatch = filterCondition === "all" || listing.condition.toLowerCase() === filterCondition.toLowerCase();
+    const setMatch = filterSet === "all" || listing.cardData.set_name === filterSet;
+    const foilMatch = !filterFoilOnly || listing.isFoil;
     const price = listing.price;
     const min = minPrice ? parseFloat(minPrice) : null;
     const max = maxPrice ? parseFloat(maxPrice) : null;
     const minMatch = min === null || price >= min;
     const maxMatch = max === null || price <= max;
-    return gameMatch && rarityMatch && conditionMatch && minMatch && maxMatch;
+    return gameMatch && rarityMatch && conditionMatch && setMatch && foilMatch && minMatch && maxMatch;
   });
+
+  const availableSets = Array.from(new Set(listings.map(l => l.cardData.set_name).filter(Boolean)));
 
   const totalListings = filteredListings.length;
   const totalValue = filteredListings.reduce((sum, l) => sum + (l.price || 0), 0);
@@ -133,8 +140,8 @@ const Marketplace = () => {
               Secure Transactions
             </Badge>
           </div>
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex gap-2 items-center">
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-2 items-center flex-wrap">
               <Select value={filterRarity} onValueChange={setFilterRarity}>
                 <SelectTrigger className="w-[140px]">
                   <Filter className="h-4 w-4 mr-2" />
@@ -171,6 +178,25 @@ const Marketplace = () => {
                   <SelectItem value="heavily_played">Heavily Played</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={filterSet} onValueChange={setFilterSet}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Set/Expansion" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sets</SelectItem>
+                  {availableSets.map(set => (
+                    <SelectItem key={set} value={set}>{set}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-2 px-3 py-2 border rounded-md bg-background">
+                <Checkbox 
+                  id="foil-only" 
+                  checked={filterFoilOnly}
+                  onCheckedChange={(checked) => setFilterFoilOnly(checked === true)}
+                />
+                <label htmlFor="foil-only" className="text-sm cursor-pointer">Foil Only</label>
+              </div>
             </div>
             <div className="flex gap-2">
               <input
@@ -213,11 +239,11 @@ const Marketplace = () => {
             <p className="text-muted-foreground">No listings match your filters</p>
           </Card>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {filteredListings.map((listing) => (
               <Card key={listing.id} className="overflow-hidden">
                 {/* Card Preview */}
-                <div className="p-4">
+                <div className="p-2">
                   <TradingCard
                     id={listing.id}
                     name={listing.cardData.name}
@@ -229,31 +255,28 @@ const Marketplace = () => {
                 </div>
 
                 {/* Listing Details */}
-                <div className="p-4 border-t border-border space-y-3">
+                <div className="p-2 border-t border-border space-y-2">
                   <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-2xl font-bold text-primary">
-                        ${listing.price.toFixed(2)}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {listing.condition} • {listing.sellerData.country}
-                      </div>
+                    <div className="text-lg font-bold text-primary">
+                      ${listing.price.toFixed(2)}
                     </div>
-                    <Badge variant="secondary" className="gap-1">
-                      <Shield className="h-3 w-3" />
-                      Secure
-                    </Badge>
+                    {listing.isFoil && (
+                      <Badge variant="secondary" className="text-xs">Foil</Badge>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {listing.condition}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button variant="outline" className="w-full" onClick={() => handleMakeOffer(listing)}>
-                      Make Offer
+                  <div className="grid grid-cols-2 gap-1">
+                    <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={() => handleMakeOffer(listing)}>
+                      Offer
                     </Button>
-                    <Button className="w-full">Buy Now</Button>
+                    <Button size="sm" className="w-full text-xs h-8">Buy</Button>
                   </div>
 
-                  <p className="text-xs text-muted-foreground text-center">
-                    Sold by {listing.sellerData.displayName}
+                  <p className="text-[10px] text-muted-foreground text-center truncate">
+                    {listing.sellerData.displayName}
                   </p>
                 </div>
               </Card>
