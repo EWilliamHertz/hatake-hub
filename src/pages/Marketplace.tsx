@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { collection, query, orderBy, limit, onSnapshot, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ interface MarketplaceListing {
       usd?: number | null;
       usd_foil?: number | null;
     };
+    is_foil?: boolean;
   };
   sellerId: string;
   sellerData: {
@@ -41,7 +42,10 @@ interface MarketplaceListing {
   };
   price: number;
   condition: string;
-  isFoil: boolean;
+  isFoil?: boolean;
+  is_foil?: boolean;
+  sale_quantity?: number;
+  quantity?: number;
   game?: string;
   currency?: string;
 }
@@ -62,6 +66,8 @@ const Marketplace = () => {
   const [filterFoilOnly, setFilterFoilOnly] = useState<boolean>(false);
   const [minPrice, setMinPrice] = useState<string>("");
   const [maxPrice, setMaxPrice] = useState<string>("");
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
 
   useEffect(() => {
     if (!user) {
@@ -81,6 +87,8 @@ const Marketplace = () => {
           listingsData.push({ id: doc.id, ...doc.data() } as MarketplaceListing);
         });
         setListings(listingsData);
+        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+        setHasMore(snapshot.docs.length === 50);
         setLoading(false);
         setError(null);
       },
@@ -97,6 +105,35 @@ const Marketplace = () => {
   const handleMakeOffer = (listing: MarketplaceListing) => {
     setSelectedListing(listing);
     setIsOfferDialogOpen(true);
+  };
+
+  const loadMoreListings = async () => {
+    if (!lastVisible || !hasMore) return;
+    
+    setLoading(true);
+    try {
+      const marketplaceRef = collection(db, 'marketplaceListings');
+      const q = query(
+        marketplaceRef, 
+        orderBy('listedAt', 'desc'), 
+        limit(50)
+      );
+      
+      const snapshot = await getDocs(q);
+      const moreListings: MarketplaceListing[] = [];
+      snapshot.forEach((doc) => {
+        moreListings.push({ id: doc.id, ...doc.data() } as MarketplaceListing);
+      });
+      
+      setListings(prev => [...prev, ...moreListings]);
+      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+      setHasMore(snapshot.docs.length === 50);
+    } catch (err: any) {
+      console.error('Error loading more listings:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filteredListings = listings.filter((listing) => {
@@ -117,7 +154,7 @@ const Marketplace = () => {
   const availableSets = Array.from(new Set(listings.map(l => l.cardData.set_name).filter(Boolean)));
 
   const totalListings = filteredListings.length;
-  const totalValue = filteredListings.reduce((sum, l) => sum + (l.price || 0), 0);
+  const totalValue = filteredListings.reduce((sum, l) => sum + (l.price || 0) * (l.sale_quantity || l.quantity || 1), 0);
   const averagePrice = totalListings > 0 ? totalValue / totalListings : 0;
 
   return (
@@ -244,14 +281,21 @@ const Marketplace = () => {
               <Card key={listing.id} className="overflow-hidden">
                 {/* Card Preview */}
                 <div className="p-2">
-                  <TradingCard
-                    id={listing.id}
-                    name={listing.cardData.name}
-                    set={listing.cardData.set_name}
-                    rarity={listing.cardData.rarity}
-                    imageUrl={listing.cardData.image_uris?.normal || listing.cardData.image_uris?.small}
-                    isFoil={listing.isFoil}
-                  />
+                  <div className="relative">
+                    <TradingCard
+                      id={listing.id}
+                      name={listing.cardData.name}
+                      set={listing.cardData.set_name}
+                      rarity={listing.cardData.rarity}
+                      imageUrl={listing.cardData.image_uris?.normal || listing.cardData.image_uris?.small}
+                      isFoil={listing.isFoil || listing.is_foil || listing.cardData?.is_foil || false}
+                    />
+                    {(listing.sale_quantity || listing.quantity) && (listing.sale_quantity || listing.quantity)! > 1 && (
+                      <Badge className="absolute top-1 right-1 text-xs">
+                        x{listing.sale_quantity || listing.quantity}
+                      </Badge>
+                    )}
+                  </div>
                 </div>
 
                 {/* Listing Details */}
@@ -281,6 +325,14 @@ const Marketplace = () => {
                 </div>
               </Card>
             ))}
+          </div>
+        )}
+        
+        {!loading && hasMore && filteredListings.length > 0 && (
+          <div className="flex justify-center mt-6">
+            <Button onClick={loadMoreListings} variant="outline">
+              Load More
+            </Button>
           </div>
         )}
       </div>

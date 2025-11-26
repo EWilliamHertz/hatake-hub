@@ -88,7 +88,11 @@ const Messenger = () => {
     ensureUserProfile();
 
     const conversationsRef = collection(db, "conversations");
-    const q = query(conversationsRef, where("participants", "array-contains", user.uid));
+    const q = query(
+      conversationsRef, 
+      where("participants", "array-contains", user.uid),
+      orderBy("updatedAt", "desc")
+    );
 
     const unsub = onSnapshot(q, async (snapshot) => {
       const data: Conversation[] = [];
@@ -161,48 +165,31 @@ const Messenger = () => {
     
     setLoadingUsers(true);
     try {
-      console.log("Loading users from conversations...");
+      console.log("Loading all users from database...");
       
-      // Get all users from existing conversations
-      const conversationsRef = collection(db, "conversations");
-      const q = query(conversationsRef, where("participants", "array-contains", user.uid));
-      const conversationsSnapshot = await getDocs(q);
+      // Query the global users collection directly
+      const usersSnapshot = await getDocs(collection(db, "users"));
       
-      const userIds = new Set<string>();
-      conversationsSnapshot.forEach((doc) => {
-        const participants = doc.data().participants || [];
-        participants.forEach((id: string) => {
-          if (id !== user.uid) {
-            userIds.add(id);
-          }
+      const allUsers: UserProfile[] = [];
+      usersSnapshot.forEach((doc) => {
+        // Skip current user
+        if (doc.id === user.uid) return;
+        
+        const data = doc.data();
+        const displayName = data.displayName || data.email?.split('@')[0] || "Unknown User";
+        allUsers.push({
+          uid: doc.id,
+          displayName,
+          photoURL: (data.photoURL || "") as string,
+          email: (data.email || "") as string,
         });
       });
       
-      // Fetch user profiles
-      const allUsers: UserProfile[] = [];
-      for (const userId of userIds) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", userId));
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            const displayName = data.displayName || data.email?.split('@')[0] || "Unknown User";
-            allUsers.push({
-              uid: userDoc.id,
-              displayName,
-              photoURL: (data.photoURL || "") as string,
-              email: (data.email || "") as string,
-            });
-          }
-        } catch (err) {
-          console.error(`Error fetching user ${userId}:`, err);
-        }
-      }
-      
-      console.log(`Loaded ${allUsers.length} users from conversations:`, allUsers.map(u => u.displayName));
+      console.log(`Loaded ${allUsers.length} users from database:`, allUsers.map(u => u.displayName));
       setUsers(allUsers);
     } catch (err: any) {
       console.error("Error loading users:", err);
-      toast.error("Failed to load users from conversations");
+      toast.error("Failed to load users");
     } finally {
       setLoadingUsers(false);
     }
