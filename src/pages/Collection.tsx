@@ -65,6 +65,8 @@ const Collection = () => {
   const [isCardDetailOpen, setIsCardDetailOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const { cards: searchResults, loading: searchLoading, search } = useCardSearch();
+  const [searchExpansionFilter, setSearchExpansionFilter] = useState('all');
+  const [availableSearchExpansions, setAvailableSearchExpansions] = useState<string[]>([]);
   const [uniqueSets, setUniqueSets] = useState<string[]>([]);
   const [cardSize, setCardSize] = useState<number>(() => {
     if (typeof window !== 'undefined') {
@@ -138,9 +140,26 @@ const Collection = () => {
     return () => unsubscribe();
   }, [user, navigate]);
 
-  const handleSearch = (query: string, game: string) => {
+  const handleSearch = (query: string, game: string, expansion?: string) => {
     search({ query, game: game as any, page: 1, limit: 50 });
+    setSearchExpansionFilter(expansion || 'all');
+    
+    // Extract unique expansions from search results for filtering
+    const expansions = new Set<string>();
+    searchResults.forEach(card => {
+      if (card.set_name) expansions.add(card.set_name);
+    });
+    setAvailableSearchExpansions(Array.from(expansions).sort());
   };
+
+  // Update available expansions when search results change
+  useEffect(() => {
+    const expansions = new Set<string>();
+    searchResults.forEach(card => {
+      if (card.set_name) expansions.add(card.set_name);
+    });
+    setAvailableSearchExpansions(Array.from(expansions).sort());
+  }, [searchResults]);
 
   const handleCardClick = (card: any) => {
     setSelectedCard(card);
@@ -430,14 +449,20 @@ const Collection = () => {
                     <DialogTitle>Search & Add Cards</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4">
-                    <CardSearchBar onSearch={handleSearch} loading={searchLoading} />
+                    <CardSearchBar 
+                      onSearch={handleSearch} 
+                      loading={searchLoading}
+                      availableExpansions={availableSearchExpansions}
+                    />
                     {searchLoading ? (
                       <div className="text-center py-8">
                         <p className="text-muted-foreground">Searching...</p>
                       </div>
                      ) : searchResults.length > 0 ? (
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto">
-                          {searchResults.map((card) => (
+                          {searchResults
+                            .filter(card => searchExpansionFilter === 'all' || card.set_name === searchExpansionFilter)
+                            .map((card) => (
                             <div key={card.id} className="cursor-pointer" onClick={() => handleCardClick(card)}>
                               <Card className="p-3 hover:bg-accent transition-colors">
                                 <img 

@@ -32,9 +32,9 @@ export const TradingCard = ({
         className
       )}
     >
-      {/* Foil Badge */}
+      {/* Foil Badge - Bottom Left */}
       {isFoil && (
-        <div className="absolute top-2 right-2 z-10 bg-gold/20 backdrop-blur-sm rounded-full p-1.5 border border-gold">
+        <div className="absolute bottom-2 left-2 z-10 bg-gold/20 backdrop-blur-sm rounded-full p-1.5 border border-gold">
           <Star className="h-4 w-4 text-gold fill-gold" />
         </div>
       )}
