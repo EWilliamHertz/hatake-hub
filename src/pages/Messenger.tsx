@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 
 interface Conversation {
@@ -58,6 +58,7 @@ const Messenger = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [showMobileChat, setShowMobileChat] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -302,7 +303,7 @@ const Messenger = () => {
   return (
     <div className="min-h-screen bg-background pb-20 flex">
       {/* Chats list */}
-      <aside className="w-2/5 border-r border-border hidden md:block">
+      <aside className={`w-full md:w-2/5 border-r border-border ${showMobileChat ? 'hidden md:block' : 'block'}`}>
         <div className="px-4 py-4 border-b border-border flex items-center justify-between">
           <h1 className="text-xl font-bold">Messenger</h1>
           <Dialog open={isNewChatOpen} onOpenChange={(open) => {
@@ -366,7 +367,10 @@ const Messenger = () => {
           {conversations.map((conversation) => (
             <button
               key={conversation.id}
-              onClick={() => setActiveConversationId(conversation.id)}
+              onClick={() => {
+                setActiveConversationId(conversation.id);
+                setShowMobileChat(true);
+              }}
               className={`w-full text-left px-4 py-3 border-b border-border flex items-center gap-3 hover:bg-muted ${
                 activeConversationId === conversation.id ? "bg-muted" : ""
               }`}
@@ -394,9 +398,23 @@ const Messenger = () => {
       </aside>
 
       {/* Messages */}
-      <main className="flex-1 flex flex-col">
+      <main className={`flex-1 flex-col ${!showMobileChat ? 'hidden md:flex' : 'flex'}`}>
         <div className="px-4 py-4 border-b border-border flex items-center justify-between">
-          <h1 className="text-xl font-bold md:hidden">Messenger</h1>
+          <div className="flex items-center gap-2">
+            <Button 
+              size="sm" 
+              variant="ghost" 
+              className="md:hidden" 
+              onClick={() => setShowMobileChat(false)}
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <h1 className="text-xl font-bold md:hidden">
+              {activeConversationId 
+                ? conversations.find(c => c.id === activeConversationId)?.otherUserName || 'Chat'
+                : 'Messenger'}
+            </h1>
+          </div>
           <Dialog open={isNewChatOpen} onOpenChange={(open) => {
             setIsNewChatOpen(open);
             if (open) loadUsers();

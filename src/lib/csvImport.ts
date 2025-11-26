@@ -240,6 +240,9 @@ export async function processCSVImport(
     updateCallback && updateCallback(i, 'processing', `Processing ${card.name}...`);
 
     try {
+      // Normalize collector number by stripping leading zeros
+      const normalizedCollectorNumber = card.collector_number ? card.collector_number.replace(/^0+/, '') : '';
+      
       // Build search query with improved logic
       let searchQuery = `!"${card.name}"`;
 
@@ -251,23 +254,41 @@ export async function processCSVImport(
         searchQuery += ` set:"${card.set_name}"`;
       }
 
-      // Add collector number if available
-      if (card.collector_number && card.collector_number.length > 0) {
-        searchQuery += ` cn:${card.collector_number}`;
+      // Add collector number if available (normalized)
+      if (normalizedCollectorNumber.length > 0) {
+        searchQuery += ` cn:${normalizedCollectorNumber}`;
       }
 
-      console.log(`Searching for: ${searchQuery} in game: ${selectedGame}`);
+      console.log(`[${i+1}/${cards.length}] Searching: ${searchQuery} (game: ${selectedGame})`);
 
-      // Search for the card using the API
+      // Strategy 1: Try full query (Name + Set + Collector Number)
       let searchResult = await searchScryDex({
         query: searchQuery,
         game: selectedGame,
         limit: 1
       });
 
-      // If no results with specific query, try name-only search
+      // Strategy 2: If no results, try Name + Set only (no collector number)
       if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
-        console.warn(`Specific query failed for "${card.name}". Trying name-only search.`);
+        const setOnlyQuery = card.set 
+          ? `!"${card.name}" set:${card.set.toLowerCase()}`
+          : card.set_name 
+            ? `!"${card.name}" set:"${card.set_name}"`
+            : null;
+        
+        if (setOnlyQuery) {
+          console.warn(`   → Trying without collector number: ${setOnlyQuery}`);
+          searchResult = await searchScryDex({
+            query: setOnlyQuery,
+            game: selectedGame,
+            limit: 1
+          });
+        }
+      }
+
+      // Strategy 3: If still no results, try name-only search
+      if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
+        console.warn(`   → Trying name-only: !"${card.name}"`);
         const simpleQuery = `!"${card.name}"`;
         searchResult = await searchScryDex({
           query: simpleQuery,
@@ -276,9 +297,9 @@ export async function processCSVImport(
         });
       }
 
-      // If still no results, try without quotes
+      // Strategy 4: Last resort - try without quotes
       if (!searchResult.success || !searchResult.data || searchResult.data.length === 0) {
-        console.warn(`Quoted search failed for "${card.name}". Trying unquoted search.`);
+        console.warn(`   → Last resort, unquoted: ${card.name}`);
         searchResult = await searchScryDex({
           query: card.name,
           game: selectedGame,
