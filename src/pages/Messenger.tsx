@@ -7,14 +7,15 @@ import {
   where,
   orderBy,
   onSnapshot,
-  addDoc,
   serverTimestamp,
   DocumentData,
   doc,
   getDoc,
   getDocs,
   setDoc,
-  limit
+  limit,
+  updateDoc,
+  arrayUnion
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
@@ -28,17 +29,23 @@ import { useIsMobile } from "@/hooks/use-mobile";
 interface Conversation {
   id: string;
   participants: string[];
+  participantInfo: {
+    [uid: string]: {
+      displayName: string;
+      photoURL: string;
+    };
+  };
+  messages: Message[];
   lastMessage?: string;
   updatedAt?: any;
-  otherUserName?: string;
-  otherUserPhotoURL?: string;
+  createdAt?: any;
+  isGroupChat: boolean;
 }
 
 interface Message {
-  id: string;
-  text: string;
+  content: string;
   senderId: string;
-  createdAt: any;
+  timestamp: any;
 }
 
 interface UserProfile {
@@ -55,8 +62,7 @@ const Messenger = () => {
   const isMobile = useIsMobile();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [newMessage, setNewMessage] = useState("");
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -68,7 +74,7 @@ const Messenger = () => {
     if (chatUserId && user && conversations.length > 0) {
       const existing = conversations.find(c => c.participants.includes(chatUserId));
       if (existing) {
-        setActiveConversationId(existing.id);
+        setActiveConversation(existing);
       }
     }
   }, [searchParams, user, conversations]);
@@ -105,82 +111,39 @@ const Messenger = () => {
       orderBy("updatedAt", "desc")
     );
 
-    const unsub = onSnapshot(q, async (snapshot) => {
-      const data: Conversation[] = [];
-      
-      for (const conversationDoc of snapshot.docs) {
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data: Conversation[] = snapshot.docs.map(conversationDoc => {
         const d = conversationDoc.data() as DocumentData;
-        const participants = d.participants || [];
-        const otherUserId = participants.find((id: string) => id !== user.uid);
-        
-        let otherUserName = "Unknown";
-        let otherUserPhotoURL = "";
-        
-        if (otherUserId) {
-          try {
-            const userDoc = await getDoc(doc(db, "users", otherUserId));
-            if (userDoc.exists()) {
-              const userData = userDoc.data();
-              otherUserName = userData.displayName || userData.email?.split('@')[0] || "Unknown";
-              otherUserPhotoURL = userData.photoURL || "";
-            }
-          } catch (err) {
-            console.error("Error fetching user:", err);
-          }
-        }
-        
-        data.push({
+        return {
           id: conversationDoc.id,
-          participants,
+          participants: d.participants || [],
+          participantInfo: d.participantInfo || {},
+          messages: d.messages || [],
           lastMessage: d.lastMessage || "",
           updatedAt: d.updatedAt,
-          otherUserName,
-          otherUserPhotoURL,
-        });
-      }
+          createdAt: d.createdAt,
+          isGroupChat: d.isGroupChat || false,
+        };
+      });
       
       setConversations(data);
+      
+      // Update active conversation if it changed
+      if (activeConversation) {
+        const updated = data.find(c => c.id === activeConversation.id);
+        if (updated) {
+          setActiveConversation(updated);
+        }
+      }
     }, (err) => {
       console.error("Error fetching conversations:", err);
       if (err.code === 'failed-precondition') {
-        console.warn("Missing index. Creating fallback query without ordering.");
+        console.warn("Missing index. Consider creating one in Firebase Console.");
       }
     });
 
     return () => unsub();
   }, [user, navigate]);
-
-  useEffect(() => {
-    if (!user || !activeConversationId) {
-      setMessages([]);
-      return;
-    }
-
-    const messagesRef = collection(db, "conversations", activeConversationId, "messages");
-    const q = query(messagesRef, orderBy("createdAt", "asc"));
-
-    console.log("Listening to messages for:", activeConversationId);
-
-    const unsub = onSnapshot(q, (snapshot) => {
-      const data: Message[] = [];
-      snapshot.forEach((doc) => {
-        const d = doc.data() as DocumentData;
-        data.push({
-          id: doc.id,
-          text: d.text || "",
-          senderId: d.senderId,
-          createdAt: d.createdAt,
-        });
-      });
-      console.log("Messages loaded:", data.length);
-      setMessages(data);
-    }, (err) => {
-      console.error("Error loading messages:", err);
-      toast.error("Failed to load messages.");
-    });
-
-    return () => unsub();
-  }, [user, activeConversationId]);
 
   const loadUsers = async () => {
     if (!user) return;
@@ -218,7 +181,7 @@ const Messenger = () => {
     try {
       const existingLocal = conversations.find(c => c.participants.includes(otherUser.uid));
       if (existingLocal) {
-        setActiveConversationId(existingLocal.id);
+        setActiveConversation(existingLocal);
         setIsNewChatOpen(false);
         return;
       }
@@ -227,24 +190,51 @@ const Messenger = () => {
       const q = query(conversationsRef, where("participants", "array-contains", user.uid));
       const snapshot = await getDocs(q);
       
-      let existingId: string | null = null;
+      let existingConv: Conversation | null = null;
       snapshot.forEach((doc) => {
         const data = doc.data();
         if (data.participants.includes(otherUser.uid)) {
-          existingId = doc.id;
+          existingConv = {
+            id: doc.id,
+            participants: data.participants,
+            participantInfo: data.participantInfo || {},
+            messages: data.messages || [],
+            lastMessage: data.lastMessage || "",
+            updatedAt: data.updatedAt,
+            createdAt: data.createdAt,
+            isGroupChat: data.isGroupChat || false,
+          };
         }
       });
 
-      if (existingId) {
-        setActiveConversationId(existingId);
+      if (existingConv) {
+        setActiveConversation(existingConv);
       } else {
-        const newRef = await addDoc(collection(db, "conversations"), {
+        const newConvRef = doc(collection(db, "conversations"));
+        const newConversation: Omit<Conversation, 'id'> = {
           participants: [user.uid, otherUser.uid],
+          participantInfo: {
+            [user.uid]: {
+              displayName: user.displayName || user.email?.split('@')[0] || 'User',
+              photoURL: user.photoURL || '',
+            },
+            [otherUser.uid]: {
+              displayName: otherUser.displayName,
+              photoURL: otherUser.photoURL,
+            },
+          },
+          messages: [],
+          lastMessage: "",
+          isGroupChat: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-          lastMessage: "",
-        });
-        setActiveConversationId(newRef.id);
+        };
+        
+        await setDoc(newConvRef, newConversation);
+        setActiveConversation({
+          id: newConvRef.id,
+          ...newConversation,
+        } as Conversation);
       }
       
       setIsNewChatOpen(false);
@@ -256,27 +246,23 @@ const Messenger = () => {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !activeConversationId || !newMessage.trim()) return;
+    if (!user || !activeConversation || !newMessage.trim()) return;
 
     const msgText = newMessage.trim();
     setNewMessage("");
 
     try {
-      const messagesRef = collection(db, "conversations", activeConversationId, "messages");
-      await addDoc(messagesRef, {
-        text: msgText,
+      const newMsg: Message = {
+        content: msgText,
         senderId: user.uid,
-        createdAt: serverTimestamp(),
-      });
+        timestamp: serverTimestamp(),
+      };
 
-      await setDoc(
-        doc(db, "conversations", activeConversationId),
-        {
-          lastMessage: msgText,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      await updateDoc(doc(db, "conversations", activeConversation.id), {
+        messages: arrayUnion(newMsg),
+        lastMessage: msgText,
+        updatedAt: serverTimestamp(),
+      });
     } catch (err) {
       console.error("Error sending message:", err);
       toast.error("Failed to send message");
@@ -292,8 +278,18 @@ const Messenger = () => {
     );
   });
 
-  const showSidebar = !isMobile || (isMobile && !activeConversationId);
-  const showChat = !isMobile || (isMobile && activeConversationId);
+  const showSidebar = !isMobile || (isMobile && !activeConversation);
+  const showChat = !isMobile || (isMobile && activeConversation);
+  
+  const getOtherUserInfo = (conv: Conversation) => {
+    const otherUserId = conv.participants.find(id => id !== user?.uid);
+    if (!otherUserId) return { name: 'Unknown', photo: '' };
+    const info = conv.participantInfo[otherUserId];
+    return {
+      name: info?.displayName || 'Unknown',
+      photo: info?.photoURL || '',
+    };
+  };
 
   return (
     <div className="min-h-screen bg-background pb-20 flex">
@@ -352,29 +348,32 @@ const Messenger = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {conversations.map(c => (
-            <div
-              key={c.id}
-              onClick={() => setActiveConversationId(c.id)}
-              className={`flex items-center gap-3 p-4 border-b border-border cursor-pointer hover:bg-muted/50 transition-colors ${activeConversationId === c.id ? 'bg-muted' : ''}`}
-            >
-              <Avatar>
-                <AvatarImage src={c.otherUserPhotoURL} />
-                <AvatarFallback>{(c.otherUserName || '?').substring(0, 2).toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-baseline">
-                  <p className="font-semibold text-sm truncate">{c.otherUserName}</p>
-                  {c.updatedAt && (
-                    <span className="text-[10px] text-muted-foreground">
-                      {new Date(c.updatedAt?.toDate ? c.updatedAt.toDate() : c.updatedAt).toLocaleDateString()}
-                    </span>
-                  )}
+          {conversations.map(c => {
+            const otherUser = getOtherUserInfo(c);
+            return (
+              <div
+                key={c.id}
+                onClick={() => setActiveConversation(c)}
+                className={`flex items-center gap-3 p-4 border-b border-border cursor-pointer hover:bg-muted/50 transition-colors ${activeConversation?.id === c.id ? 'bg-muted' : ''}`}
+              >
+                <Avatar>
+                  <AvatarImage src={otherUser.photo} />
+                  <AvatarFallback>{otherUser.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-baseline">
+                    <p className="font-semibold text-sm truncate">{otherUser.name}</p>
+                    {c.updatedAt && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Date(c.updatedAt?.toDate ? c.updatedAt.toDate() : c.updatedAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">{c.lastMessage || "No messages yet"}</p>
                 </div>
-                <p className="text-xs text-muted-foreground truncate">{c.lastMessage || "No messages yet"}</p>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {conversations.length === 0 && (
             <div className="p-8 text-center text-muted-foreground">
               <p>No conversations yet.</p>
@@ -385,33 +384,33 @@ const Messenger = () => {
       </aside>
 
       <main className={`${showChat ? 'w-full md:w-3/5' : 'hidden md:flex md:w-3/5'} flex-col h-[calc(100vh-5rem)] bg-background`}>
-        {activeConversationId ? (
+        {activeConversation ? (
           <>
             <div className="p-4 border-b border-border flex items-center gap-3 bg-card shadow-sm">
-              <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setActiveConversationId(null)}>
+              <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setActiveConversation(null)}>
                 <ArrowLeft className="h-5 w-5" />
               </Button>
               <div className="flex items-center gap-3">
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src={conversations.find(c => c.id === activeConversationId)?.otherUserPhotoURL} />
-                  <AvatarFallback>?</AvatarFallback>
+                  <AvatarImage src={getOtherUserInfo(activeConversation).photo} />
+                  <AvatarFallback>{getOtherUserInfo(activeConversation).name.substring(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <span className="font-semibold">
-                  {conversations.find(c => c.id === activeConversationId)?.otherUserName || "Chat"}
+                  {getOtherUserInfo(activeConversation).name}
                 </span>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {messages.length === 0 && (
+              {(!activeConversation.messages || activeConversation.messages.length === 0) && (
                 <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                   Say hello! 👋
                 </div>
               )}
-              {messages.map(msg => (
-                <div key={msg.id} className={`flex ${msg.senderId === user?.uid ? 'justify-end' : 'justify-start'}`}>
+              {activeConversation.messages?.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.senderId === user?.uid ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] p-3 rounded-xl text-sm ${msg.senderId === user?.uid ? 'bg-primary text-primary-foreground rounded-br-none' : 'bg-muted text-foreground rounded-bl-none'}`}>
-                    {msg.text}
+                    {msg.content}
                   </div>
                 </div>
               ))}
