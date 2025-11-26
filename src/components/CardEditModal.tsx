@@ -16,47 +16,13 @@ import { useCurrency } from '@/hooks/useCurrency';
 interface CardEditModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  card: {
-    id?: string;
-    api_id?: string;
-    name: string;
-    set_name: string;
-    rarity: string;
-    image_uris?: {
-      small: string;
-      normal: string;
-      large: string;
-    };
-    images?: Array<{
-      small: string;
-      medium: string;
-      large: string;
-    }>;
-    collector_number?: string;
-    prices?: {
-      usd?: number | null;
-      usd_foil?: number | null;
-      eur?: number | null;
-      eur_foil?: number | null;
-    };
-    game?: string;
-    quantity?: number;
-    condition?: string;
-    notes?: string;
-    is_foil?: boolean;
-    is_signed?: boolean;
-    is_altered?: boolean;
-    is_graded?: boolean;
-    grading_company?: string;
-    grade?: number;
-    purchase_price?: number;
-  } | null;
+  card: any;
   isExistingCard?: boolean;
 }
 
 export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false }: CardEditModalProps) => {
   const { user } = useAuth();
-  const { currency, convertPrice, formatPrice } = useCurrency();
+  const { formatPrice, convertPrice } = useCurrency();
   const [quantity, setQuantity] = useState(1);
   const [condition, setCondition] = useState('Near Mint');
   const [notes, setNotes] = useState('');
@@ -69,7 +35,6 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
   const [purchasePrice, setPurchasePrice] = useState('');
   const [saving, setSaving] = useState(false);
   
-  // Marketplace fields
   const [listPrice, setListPrice] = useState('');
   const [isListingForSale, setIsListingForSale] = useState(false);
 
@@ -85,14 +50,19 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
       setGradingCompany(card.grading_company || '');
       setGrade(card.grade?.toString() || '');
       setPurchasePrice(card.purchase_price?.toString() || '');
+    } else if (card) {
+      setIsFoil(card.is_foil || false);
     }
   }, [card, isExistingCard]);
 
   if (!card) return null;
 
   const imageUrl = card.image_uris?.normal || card.image_uris?.large || card.images?.[0]?.medium || card.images?.[0]?.large;
-  const currentPrice = convertPrice(isFoil ? card.prices?.usd_foil : card.prices?.usd);
-  const cardId = card.api_id || card.id || `${card.name}-${card.set_name}`.replace(/\s+/g, '-').toLowerCase();
+  const currentPrice = convertPrice(isFoil ? (card.prices?.usd_foil || 0) : (card.prices?.usd || 0));
+  
+  const cardName = card.name || 'Unknown Card';
+  const setName = card.set_name || card.set || 'Unknown Set';
+  const cardId = card.api_id || card.id || `${cardName}-${setName}`.replace(/[^a-z0-9]/gi, '-').toLowerCase();
 
   const handleSave = async () => {
     if (!user) {
@@ -102,48 +72,49 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
 
     setSaving(true);
     try {
-      // Sanitize card ID to prevent path issues with slashes
-      const safeCardId = cardId.replace(/\//g, '-');
-      const collectionRef = doc(db, 'users', user.uid, 'collection', safeCardId);
+      const collectionRef = doc(db, 'users', user.uid, 'collection', cardId);
 
-      // Helper to safely parse numbers, preventing NaN
-      const safeFloat = (val: string) => {
-        if (!val || val.trim() === '') return null;
-        const parsed = parseFloat(val);
+      const safeFloat = (val: string | number | undefined) => {
+        if (val === undefined || val === null || val === '') return null;
+        const parsed = typeof val === 'string' ? parseFloat(val) : val;
         return isNaN(parsed) ? null : parsed;
       };
 
+      const safeStr = (val: any) => (val ? String(val) : '');
+
       const cardData = {
-        api_id: card.api_id || card.id || safeCardId,
-        name: card.name,
-        set_name: card.set_name,
-        rarity: card.rarity ?? null,
-        collector_number: card.collector_number ?? null,
+        api_id: safeStr(card.api_id || card.id || cardId),
+        name: safeStr(card.name),
+        set_name: safeStr(card.set_name || card.set),
+        rarity: safeStr(card.rarity),
+        collector_number: safeStr(card.collector_number),
         image_uris: card.image_uris || {
-          small: card.images?.[0]?.small ?? '',
-          normal: card.images?.[0]?.medium ?? '',
-          large: card.images?.[0]?.large ?? ''
+          small: card.images?.[0]?.small || '',
+          normal: card.images?.[0]?.medium || '',
+          large: card.images?.[0]?.large || ''
         },
-        quantity,
-        condition,
-        notes,
-        is_foil: isFoil,
-        is_signed: isSigned,
-        is_altered: isAltered,
-        is_graded: isGraded,
-        grading_company: isGraded ? (gradingCompany || null) : null,
+        quantity: Math.max(1, parseInt(String(quantity)) || 1),
+        condition: safeStr(condition),
+        notes: safeStr(notes),
+        is_foil: Boolean(isFoil),
+        is_signed: Boolean(isSigned),
+        is_altered: Boolean(isAltered),
+        is_graded: Boolean(isGraded),
+        grading_company: isGraded ? safeStr(gradingCompany) : null,
         grade: isGraded ? safeFloat(grade) : null,
         purchase_price: safeFloat(purchasePrice),
         prices: {
-          usd: card.prices?.usd ?? null,
-          usd_foil: card.prices?.usd_foil ?? null,
-          eur: card.prices?.eur ?? null,
-          eur_foil: card.prices?.eur_foil ?? null,
+          usd: safeFloat(card.prices?.usd),
+          usd_foil: safeFloat(card.prices?.usd_foil),
+          eur: safeFloat(card.prices?.eur),
+          eur_foil: safeFloat(card.prices?.eur_foil),
         },
-        game: card.game ?? 'mtg',
+        game: safeStr(card.game || 'mtg'),
         addedAt: new Date(),
         priceLastUpdated: new Date().toISOString(),
       };
+
+      console.log("Saving sanitized card data:", cardData);
 
       if (isExistingCard) {
         await updateDoc(collectionRef, cardData);
@@ -151,35 +122,39 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
         await setDoc(collectionRef, cardData);
       }
 
-      // If listing for sale, add to marketplace
       if (isListingForSale && listPrice) {
-        await addDoc(collection(db, 'marketplace'), {
-          cardData: {
-            name: card.name,
-            set_name: card.set_name,
-            rarity: card.rarity,
-            image_uris: card.image_uris
-          },
-          sellerId: user.uid,
-          sellerData: {
-            displayName: user.displayName || 'Anonymous',
-            country: 'Unknown'
-          },
-          price: parseFloat(listPrice),
-          condition,
-          isFoil,
-          notes,
-          timestamp: serverTimestamp()
-        });
-        toast.success('Card listed for sale!');
+        const price = safeFloat(listPrice);
+        if (price && price > 0) {
+          await addDoc(collection(db, 'marketplaceListings'), {
+            cardData: {
+              name: cardData.name,
+              set_name: cardData.set_name,
+              rarity: cardData.rarity,
+              image_uris: cardData.image_uris
+            },
+            sellerId: user.uid,
+            sellerData: {
+              displayName: user.displayName || 'Anonymous',
+              country: 'Unknown'
+            },
+            price: price,
+            quantity: 1,
+            condition: cardData.condition,
+            isFoil: cardData.is_foil,
+            notes: cardData.notes,
+            listedAt: serverTimestamp(),
+            game: cardData.game
+          });
+          toast.success('Card listed for sale!');
+        }
       }
 
-      toast.success(isExistingCard ? 'Card updated!' : `Added ${quantity}x ${card.name} to collection!`);
+      toast.success(isExistingCard ? 'Card updated!' : `Added ${quantity}x ${cardData.name} to collection!`);
       onOpenChange(false);
-      resetForm();
-    } catch (error) {
+      if (!isExistingCard) resetForm();
+    } catch (error: any) {
       console.error('Error saving card:', error);
-      toast.error('Failed to save card');
+      toast.error(`Failed to save: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -187,7 +162,6 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
 
   const handleDelete = async () => {
     if (!user || !isExistingCard) return;
-
     if (!confirm('Are you sure you want to remove this card from your collection?')) return;
 
     try {
@@ -218,10 +192,13 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden p-0">
-        <div className="flex h-full">
-          <div className="w-1/3 bg-muted p-6 flex items-center justify-center">
+        <div className="flex h-full flex-col md:flex-row">
+          <div className="w-full md:w-1/3 bg-muted p-6 flex items-center justify-center relative">
             {imageUrl ? (
-              <img src={imageUrl} alt={card.name} className="max-w-full max-h-full rounded-lg object-contain" />
+              <>
+                <img src={imageUrl} alt={card.name} className="max-w-full max-h-[200px] md:max-h-full rounded-lg object-contain z-10" />
+                {isFoil && <div className="absolute inset-0 pointer-events-none rainbow-foil z-20 opacity-30 mix-blend-screen"></div>}
+              </>
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-muted-foreground/10 rounded-lg">
                 <p className="text-muted-foreground">No image</p>
@@ -229,18 +206,20 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
             )}
           </div>
 
-          <div className="w-2/3 p-6 flex flex-col overflow-y-auto">
+          <div className="w-full md:w-2/3 p-6 flex flex-col overflow-y-auto">
             <DialogHeader className="mb-4">
               <DialogTitle className="text-2xl">{card.name}</DialogTitle>
               <DialogDescription>
-                {isExistingCard ? 'Update card details and marketplace listing' : 'Add this card to your collection'}
+                {isExistingCard ? 'Update card details' : 'Add to collection'}
               </DialogDescription>
               <p className="text-sm text-muted-foreground">{card.set_name}</p>
-              {currentPrice && (
-                <p className="text-lg font-bold text-primary">
-                  {formatPrice(currentPrice)}
-                </p>
-              )}
+              <div className="mt-2">
+                {currentPrice ? (
+                  <p className="text-lg font-bold text-primary">{formatPrice(currentPrice)}</p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Price unavailable</p>
+                )}
+              </div>
             </DialogHeader>
 
             <Tabs defaultValue="details" className="flex-1">
@@ -270,11 +249,6 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
                   </div>
                 </div>
 
-                <div>
-                  <Label htmlFor="purchase-price">Purchase Price (optional)</Label>
-                  <Input id="purchase-price" type="number" step="0.01" placeholder="0.00" value={purchasePrice} onChange={(e) => setPurchasePrice(e.target.value)} />
-                </div>
-
                 <div className="space-y-2">
                   <Label>Special Attributes</Label>
                   <div className="flex flex-wrap gap-4">
@@ -283,44 +257,22 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
                       <label htmlFor="foil" className="text-sm cursor-pointer">Foil</label>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <Checkbox id="signed" checked={isSigned} onCheckedChange={(checked) => setIsSigned(checked as boolean)} />
-                      <label htmlFor="signed" className="text-sm cursor-pointer">Signed</label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="altered" checked={isAltered} onCheckedChange={(checked) => setIsAltered(checked as boolean)} />
-                      <label htmlFor="altered" className="text-sm cursor-pointer">Altered</label>
-                    </div>
-                    <div className="flex items-center space-x-2">
                       <Checkbox id="graded" checked={isGraded} onCheckedChange={(checked) => setIsGraded(checked as boolean)} />
                       <label htmlFor="graded" className="text-sm cursor-pointer">Graded</label>
                     </div>
                   </div>
                 </div>
 
-                {isGraded && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="grading-company">Grading Company</Label>
-                      <Select value={gradingCompany} onValueChange={setGradingCompany}>
-                        <SelectTrigger id="grading-company"><SelectValue placeholder="Select company" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="PSA">PSA</SelectItem>
-                          <SelectItem value="BGS">BGS</SelectItem>
-                          <SelectItem value="CGC">CGC</SelectItem>
-                          <SelectItem value="SGC">SGC</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="grade">Grade</Label>
-                      <Input id="grade" type="number" step="0.5" min="1" max="10" placeholder="e.g., 9.5" value={grade} onChange={(e) => setGrade(e.target.value)} />
-                    </div>
-                  </div>
-                )}
-
                 <div>
-                  <Label htmlFor="notes">Notes (displayed in collection & marketplace)</Label>
-                  <Textarea id="notes" placeholder="Add notes about this card..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+                  <Label htmlFor="purchase-price">Purchase Price</Label>
+                  <Input 
+                    id="purchase-price" 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="0.00" 
+                    value={purchasePrice} 
+                    onChange={(e) => setPurchasePrice(e.target.value)} 
+                  />
                 </div>
               </TabsContent>
 
@@ -333,47 +285,24 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
                 </div>
 
                 {isListingForSale && (
-                  <>
-                    <div>
-                      <Label htmlFor="list-price">Selling Price ($)</Label>
-                      <Input 
-                        id="list-price" 
-                        type="number" 
-                        step="0.01" 
-                        placeholder={currentPrice ? currentPrice.toFixed(2) : "0.00"} 
-                        value={listPrice} 
-                        onChange={(e) => setListPrice(e.target.value)} 
-                      />
-                      {currentPrice && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Market value: ${currentPrice.toFixed(2)}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="bg-muted p-3 rounded-lg space-y-1">
-                      <p className="text-sm font-medium">Listing Preview:</p>
-                      <p className="text-xs text-muted-foreground">{card.name} - {condition}</p>
-                      {isFoil && <p className="text-xs text-primary">Foil</p>}
-                      {notes && <p className="text-xs text-muted-foreground italic">{notes}</p>}
-                    </div>
-                  </>
+                  <div>
+                    <Label htmlFor="list-price">Selling Price ($)</Label>
+                    <Input 
+                      id="list-price" 
+                      type="number" 
+                      step="0.01" 
+                      placeholder={currentPrice ? currentPrice.toFixed(2) : "0.00"} 
+                      value={listPrice} 
+                      onChange={(e) => setListPrice(e.target.value)} 
+                    />
+                  </div>
                 )}
               </TabsContent>
             </Tabs>
 
             <div className="flex gap-2 mt-6 pt-4 border-t">
-              {isExistingCard && (
-                <Button variant="destructive" onClick={handleDelete}>
-                  Remove
-                </Button>
-              )}
-              <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={saving} className="flex-1">
-                {saving ? 'Saving...' : isExistingCard ? 'Update Card' : 'Add to Collection'}
-              </Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">Cancel</Button>
+              <Button onClick={handleSave} disabled={saving} className="flex-1">{saving ? 'Saving...' : 'Save'}</Button>
             </div>
           </div>
         </div>
