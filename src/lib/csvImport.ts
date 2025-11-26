@@ -1,8 +1,3 @@
-/**
- * csvImport.ts
- * Enhanced CSV import functionality copied from GeminiHatake's csv-fixed.js
- * Handles ManaBox files with improved parsing and error handling.
- */
 import { searchScryDex, CardResult } from './firebase-functions';
 
 // Enhanced header mapping for ManaBox and other common CSV formats

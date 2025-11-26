@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ShoppingCart, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CartDialog } from "@/components/CartDialog";
+import { ProductModal } from "@/components/ProductModal"; // New Import
 import { toast } from "sonner";
 
 interface Product {
@@ -27,11 +28,16 @@ const Shop = () => {
   const { user } = useAuth();
   const { addToCart, totalItems, items: cartItems } = useCart();
   const navigate = useNavigate();
+  
+  // State
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
+  
+  // Modal State
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -39,9 +45,9 @@ const Shop = () => {
       return;
     }
 
-    // Listen to products in real-time
     const productsRef = collection(db, 'products');
-    const q = query(productsRef, where('stock', '>', 0));
+    // Basic query, you can add where('stock', '>', 0) if you want to hide sold out items
+    const q = query(productsRef);
     
     const unsubscribe = onSnapshot(
       q, 
@@ -75,7 +81,8 @@ const Shop = () => {
     return () => unsubscribe();
   }, [user, navigate]);
 
-  const handleAddToCart = (product: Product) => {
+  const handleQuickAdd = (e: React.MouseEvent, product: Product) => {
+    e.stopPropagation(); // Prevent opening the modal
     addToCart({
       productId: product.id,
       name: product.name,
@@ -85,7 +92,8 @@ const Shop = () => {
     toast.success(`${product.name} added to cart`);
   };
 
-  const handleCheckout = async () => {
+  // Logic for the Cart Dialog "Checkout" button
+  const handleCartCheckout = async () => {
     if (cartItems.length === 0) {
       toast.error('Your cart is empty');
       return;
@@ -95,7 +103,9 @@ const Shop = () => {
     setCartOpen(false);
 
     try {
-      // Create line items for Stripe from cart
+      // NOTE: You must implement this Cloud Function or use client-side logic looping 
+      // if you want to checkout multiple items at once.
+      // For now, I'm keeping your existing fetch call logic here:
       const lineItems = cartItems.map(item => {
         const product = products.find(p => p.id === item.productId);
         if (!product?.stripePriceId) {
@@ -107,12 +117,9 @@ const Shop = () => {
         };
       });
 
-      // Call Firebase function for Stripe checkout
       const response = await fetch('https://us-central1-hatakesocial-88b5e.cloudfunctions.net/createStripeCheckout', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lineItems,
           successUrl: window.location.origin + '/shop?success=true',
@@ -120,18 +127,9 @@ const Shop = () => {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create checkout session');
-      }
+      if (!response.ok) throw new Error('Failed to create checkout session');
 
       const session = await response.json();
-      
-      if (session.error) {
-        throw new Error(session.error);
-      }
-
-      // Redirect to Stripe Checkout
       if (session.url) {
         window.location.href = session.url;
       } else {
@@ -139,7 +137,7 @@ const Shop = () => {
       }
     } catch (error) {
       console.error('Checkout error:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to start checkout');
+      toast.error('Failed to start checkout');
       setCheckoutLoading(false);
     }
   };
@@ -147,11 +145,11 @@ const Shop = () => {
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-card border-b border-border">
+      <header className="sticky top-0 z-40 bg-card/80 backdrop-blur-md border-b border-border">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">TCG Shop</h1>
+              <h1 className="text-2xl font-bold tracking-tight">TCG Shop</h1>
               <p className="text-sm text-muted-foreground">Official HatakeSocial Products</p>
             </div>
             <Button 
@@ -163,7 +161,7 @@ const Shop = () => {
               <ShoppingCart className="h-4 w-4" />
               Cart
               {totalItems > 0 && (
-                <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center">
+                <Badge className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center animate-in zoom-in">
                   {totalItems}
                 </Badge>
               )}
@@ -173,68 +171,77 @@ const Shop = () => {
       </header>
 
       {/* Products Grid */}
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-7xl mx-auto px-4 py-8">
         {loading ? (
-          <Card className="p-8 text-center">
-            <p className="text-muted-foreground">Loading products...</p>
-          </Card>
+          <div className="flex justify-center p-12">
+            <p className="text-muted-foreground animate-pulse">Loading products...</p>
+          </div>
         ) : error ? (
-          <Card className="p-8 text-center">
-            <p className="text-destructive mb-2">Error loading shop</p>
+          <Card className="p-8 text-center border-destructive/20 bg-destructive/5">
+            <p className="text-destructive mb-2 font-semibold">Error loading shop</p>
             <p className="text-sm text-muted-foreground">{error}</p>
           </Card>
         ) : products.length === 0 ? (
-          <Card className="p-8 text-center">
-            <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">No products available</p>
+          <Card className="p-12 text-center">
+            <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
+            <p className="text-muted-foreground">No products available at the moment.</p>
           </Card>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {products.map((product) => (
-              <Card key={product.id} className="overflow-hidden">
-                {/* Product Image */}
-                <div className="aspect-square bg-muted relative">
+              <Card 
+                key={product.id} 
+                className="group overflow-hidden cursor-pointer transition-all hover:shadow-lg border-border/50"
+                onClick={() => setSelectedProduct(product)}
+              >
+                {/* Product Image Area */}
+                <div className="aspect-[4/3] bg-muted relative overflow-hidden">
                   {product.galleryImageUrls && product.galleryImageUrls.length > 0 ? (
                     <img
                       src={product.galleryImageUrls[0]}
                       alt={product.name}
                       loading="lazy"
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <Package className="h-12 w-12 text-muted-foreground" />
+                      <Package className="h-12 w-12 text-muted-foreground/30" />
                     </div>
                   )}
-                  {product.stock < 10 && (
-                    <Badge className="absolute top-2 right-2" variant="destructive">
+                  
+                  {product.stock === 0 && (
+                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-[2px]">
+                       <span className="text-white font-bold border-2 border-white px-4 py-1">SOLD OUT</span>
+                     </div>
+                  )}
+                  {product.stock > 0 && product.stock < 10 && (
+                    <Badge className="absolute top-2 right-2 bg-amber-500 hover:bg-amber-600">
                       Low Stock
                     </Badge>
                   )}
                 </div>
 
                 {/* Product Info */}
-                <div className="p-4 space-y-3">
+                <div className="p-5 space-y-3">
                   <div>
-                    <h3 className="font-semibold text-sm line-clamp-2">{product.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {product.stock} available
-                    </p>
+                    <h3 className="font-semibold text-base leading-tight group-hover:text-primary transition-colors">
+                      {product.name}
+                    </h3>
                   </div>
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-bold text-primary">
-                      ${product.price.toFixed(2)}
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-xl font-bold text-primary">
+                      €{product.price.toFixed(2)}
                     </span>
                     <Button
                       size="sm"
-                      onClick={() => handleAddToCart(product)}
-                      disabled={checkoutLoading}
+                      variant="secondary"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => handleQuickAdd(e, product)}
+                      disabled={product.stock === 0}
                     >
-                      <ShoppingCart className="h-4 w-4" />
+                      <ShoppingCart className="h-4 w-4 mr-2" />
+                      Add
                     </Button>
                   </div>
                 </div>
@@ -244,10 +251,17 @@ const Shop = () => {
         )}
       </div>
 
+      {/* Popups */}
       <CartDialog 
         open={cartOpen} 
         onOpenChange={setCartOpen}
-        onCheckout={handleCheckout}
+        onCheckout={handleCartCheckout}
+      />
+      
+      <ProductModal 
+        product={selectedProduct} 
+        isOpen={!!selectedProduct} 
+        onClose={() => setSelectedProduct(null)} 
       />
     </div>
   );

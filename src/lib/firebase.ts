@@ -2,6 +2,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getFunctions } from "firebase/functions"; // Added import
 import { getAnalytics } from "firebase/analytics";
 
 // Helper to check if env vars are loaded
@@ -23,11 +24,19 @@ const firebaseConfig = {
   measurementId: getEnvVar("VITE_FIREBASE_MEASUREMENT_ID")
 };
 
+// Debugging: Log config status (don't log keys)
+console.log("Firebase Config Loaded:", {
+  projectId: firebaseConfig.projectId,
+  authDomain: firebaseConfig.authDomain,
+  hasApiKey: !!firebaseConfig.apiKey
+});
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const functions = getFunctions(app); // Initialize functions
 const googleProvider = new GoogleAuthProvider();
 
 // Initialize Analytics only in production/supported environments
@@ -40,4 +49,4 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export { auth, db, storage, googleProvider, analytics };
+export { auth, db, storage, functions, googleProvider, analytics };

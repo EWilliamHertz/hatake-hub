@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "hatakesocial-88b5e"
+  },
+  "targets": {
+    "hatakesocial-88b5e": {
+      "hosting": {
+        "mobile-app": [
+          "hatakemobile"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}
