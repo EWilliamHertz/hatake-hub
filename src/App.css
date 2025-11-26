@@ -40,3 +40,29 @@
 .read-the-docs {
   color: #888;
 }
+/* ... existing code ... */
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Improve tap highlights on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Better smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Prevent pull-to-refresh on body to implement custom one if needed */
+body {
+  overscroll-behavior-y: none; 
+}

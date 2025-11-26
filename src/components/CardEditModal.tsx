@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +11,8 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { useCurrency } from '@/hooks/useCurrency';
+import { useHaptic } from '@/hooks/use-haptic';
+import { ResponsiveDialog } from '@/components/ui/responsive-dialog';
 
 interface CardEditModalProps {
   open: boolean;
@@ -23,6 +24,9 @@ interface CardEditModalProps {
 export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false }: CardEditModalProps) => {
   const { user } = useAuth();
   const { formatPrice, convertPrice } = useCurrency();
+  const { trigger: haptic } = useHaptic(); // Haptic feedback hook
+
+  // State
   const [quantity, setQuantity] = useState(1);
   const [condition, setCondition] = useState('Near Mint');
   const [notes, setNotes] = useState('');
@@ -35,6 +39,7 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
   const [purchasePrice, setPurchasePrice] = useState('');
   const [saving, setSaving] = useState(false);
   
+  // Marketplace fields
   const [listPrice, setListPrice] = useState('');
   const [isListingForSale, setIsListingForSale] = useState(false);
 
@@ -51,7 +56,7 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
       setGrade(card.grade?.toString() || '');
       setPurchasePrice(card.purchase_price?.toString() || '');
     } else if (card) {
-      setIsFoil(card.is_foil || false);
+        setIsFoil(card.is_foil || false);
     }
   }, [card, isExistingCard]);
 
@@ -65,6 +70,7 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
   const cardId = card.api_id || card.id || `${cardName}-${setName}`.replace(/[^a-z0-9]/gi, '-').toLowerCase();
 
   const handleSave = async () => {
+    haptic('medium'); // Vibrate on click
     if (!user) {
       toast.error('You must be logged in');
       return;
@@ -79,7 +85,6 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
         const parsed = typeof val === 'string' ? parseFloat(val) : val;
         return isNaN(parsed) ? null : parsed;
       };
-
       const safeStr = (val: any) => (val ? String(val) : '');
 
       const cardData = {
@@ -114,8 +119,6 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
         priceLastUpdated: new Date().toISOString(),
       };
 
-      console.log("Saving sanitized card data:", cardData);
-
       if (isExistingCard) {
         await updateDoc(collectionRef, cardData);
       } else {
@@ -125,34 +128,36 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
       if (isListingForSale && listPrice) {
         const price = safeFloat(listPrice);
         if (price && price > 0) {
-          await addDoc(collection(db, 'marketplaceListings'), {
-            cardData: {
-              name: cardData.name,
-              set_name: cardData.set_name,
-              rarity: cardData.rarity,
-              image_uris: cardData.image_uris
-            },
-            sellerId: user.uid,
-            sellerData: {
-              displayName: user.displayName || 'Anonymous',
-              country: 'Unknown'
-            },
-            price: price,
-            quantity: 1,
-            condition: cardData.condition,
-            isFoil: cardData.is_foil,
-            notes: cardData.notes,
-            listedAt: serverTimestamp(),
-            game: cardData.game
-          });
-          toast.success('Card listed for sale!');
+            await addDoc(collection(db, 'marketplaceListings'), {
+                cardData: {
+                    name: cardData.name,
+                    set_name: cardData.set_name,
+                    rarity: cardData.rarity,
+                    image_uris: cardData.image_uris
+                },
+                sellerId: user.uid,
+                sellerData: {
+                    displayName: user.displayName || 'Anonymous',
+                    country: 'Unknown'
+                },
+                price: price,
+                quantity: 1,
+                condition: cardData.condition,
+                isFoil: cardData.is_foil,
+                notes: cardData.notes,
+                listedAt: serverTimestamp(),
+                game: cardData.game
+            });
+            toast.success('Card listed for sale!');
         }
       }
 
+      haptic('success');
       toast.success(isExistingCard ? 'Card updated!' : `Added ${quantity}x ${cardData.name} to collection!`);
       onOpenChange(false);
       if (!isExistingCard) resetForm();
     } catch (error: any) {
+      haptic('error');
       console.error('Error saving card:', error);
       toast.error(`Failed to save: ${error.message}`);
     } finally {
@@ -161,6 +166,7 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
   };
 
   const handleDelete = async () => {
+    haptic('warning');
     if (!user || !isExistingCard) return;
     if (!confirm('Are you sure you want to remove this card from your collection?')) return;
 
@@ -190,123 +196,162 @@ export const CardEditModal = ({ open, onOpenChange, card, isExistingCard = false
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden p-0">
-        <div className="flex h-full flex-col md:flex-row">
-          <div className="w-full md:w-1/3 bg-muted p-6 flex items-center justify-center relative">
-            {imageUrl ? (
-              <>
-                <img src={imageUrl} alt={card.name} className="max-w-full max-h-[200px] md:max-h-full rounded-lg object-contain z-10" />
-                {isFoil && <div className="absolute inset-0 pointer-events-none rainbow-foil z-20 opacity-30 mix-blend-screen"></div>}
-              </>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-muted-foreground/10 rounded-lg">
-                <p className="text-muted-foreground">No image</p>
-              </div>
-            )}
-          </div>
-
-          <div className="w-full md:w-2/3 p-6 flex flex-col overflow-y-auto">
-            <DialogHeader className="mb-4">
-              <DialogTitle className="text-2xl">{card.name}</DialogTitle>
-              <DialogDescription>
-                {isExistingCard ? 'Update card details' : 'Add to collection'}
-              </DialogDescription>
-              <p className="text-sm text-muted-foreground">{card.set_name}</p>
-              <div className="mt-2">
-                {currentPrice ? (
-                  <p className="text-lg font-bold text-primary">{formatPrice(currentPrice)}</p>
+    <ResponsiveDialog
+        isOpen={open}
+        setIsOpen={onOpenChange}
+        title={card.name}
+        description={card.set_name}
+    >
+        <div className="flex flex-col gap-6">
+            {/* Image Section - Flexible height */}
+            <div className="w-full flex items-center justify-center relative bg-muted/30 rounded-lg p-4">
+                {imageUrl ? (
+                    <>
+                        <img src={imageUrl} alt={card.name} className="max-h-[250px] w-auto object-contain rounded-lg shadow-md z-10" />
+                        {isFoil && <div className="absolute inset-0 pointer-events-none rainbow-foil z-20 opacity-30 mix-blend-screen rounded-lg"></div>}
+                    </>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Price unavailable</p>
-                )}
-              </div>
-            </DialogHeader>
-
-            <Tabs defaultValue="details" className="flex-1">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="details">Card Details</TabsTrigger>
-                <TabsTrigger value="marketplace">List for Sale</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="details" className="space-y-4 mt-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="quantity">Quantity</Label>
-                    <Input id="quantity" type="number" min="1" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} />
-                  </div>
-                  <div>
-                    <Label htmlFor="condition">Condition</Label>
-                    <Select value={condition} onValueChange={setCondition}>
-                      <SelectTrigger id="condition"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Near Mint">Near Mint</SelectItem>
-                        <SelectItem value="Lightly Played">Lightly Played</SelectItem>
-                        <SelectItem value="Moderately Played">Moderately Played</SelectItem>
-                        <SelectItem value="Heavily Played">Heavily Played</SelectItem>
-                        <SelectItem value="Damaged">Damaged</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Special Attributes</Label>
-                  <div className="flex flex-wrap gap-4">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="foil" checked={isFoil} onCheckedChange={(checked) => setIsFoil(checked as boolean)} />
-                      <label htmlFor="foil" className="text-sm cursor-pointer">Foil</label>
+                    <div className="h-[200px] w-full flex items-center justify-center bg-muted rounded-lg">
+                        <p className="text-muted-foreground">No image</p>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox id="graded" checked={isGraded} onCheckedChange={(checked) => setIsGraded(checked as boolean)} />
-                      <label htmlFor="graded" className="text-sm cursor-pointer">Graded</label>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="purchase-price">Purchase Price</Label>
-                  <Input 
-                    id="purchase-price" 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="0.00" 
-                    value={purchasePrice} 
-                    onChange={(e) => setPurchasePrice(e.target.value)} 
-                  />
-                </div>
-              </TabsContent>
-
-              <TabsContent value="marketplace" className="space-y-4 mt-4">
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox id="list-for-sale" checked={isListingForSale} onCheckedChange={(checked) => setIsListingForSale(checked as boolean)} />
-                    <label htmlFor="list-for-sale" className="text-sm font-medium cursor-pointer">List this card for sale</label>
-                  </div>
-                </div>
-
-                {isListingForSale && (
-                  <div>
-                    <Label htmlFor="list-price">Selling Price ($)</Label>
-                    <Input 
-                      id="list-price" 
-                      type="number" 
-                      step="0.01" 
-                      placeholder={currentPrice ? currentPrice.toFixed(2) : "0.00"} 
-                      value={listPrice} 
-                      onChange={(e) => setListPrice(e.target.value)} 
-                    />
-                  </div>
                 )}
-              </TabsContent>
+                <div className="absolute top-2 right-2 bg-black/60 text-white px-2 py-1 rounded text-xs backdrop-blur-sm">
+                    {currentPrice ? formatPrice(currentPrice) : 'N/A'}
+                </div>
+            </div>
+
+            {/* Form Content */}
+            <Tabs defaultValue="details" className="w-full">
+                <TabsList className="grid w-full grid-cols-2 mb-4">
+                    <TabsTrigger value="details" onClick={() => haptic('light')}>Details</TabsTrigger>
+                    <TabsTrigger value="marketplace" onClick={() => haptic('light')}>Marketplace</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="details" className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label>Quantity</Label>
+                            <div className="flex items-center">
+                                <Button 
+                                    variant="outline" 
+                                    size="icon" 
+                                    className="h-10 w-10 rounded-r-none"
+                                    onClick={() => { haptic('light'); setQuantity(Math.max(1, quantity - 1)); }}
+                                >-</Button>
+                                <Input 
+                                    className="h-10 text-center rounded-none border-x-0 focus-visible:ring-0" 
+                                    type="number" 
+                                    value={quantity} 
+                                    onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} 
+                                />
+                                <Button 
+                                    variant="outline" 
+                                    size="icon" 
+                                    className="h-10 w-10 rounded-l-none"
+                                    onClick={() => { haptic('light'); setQuantity(quantity + 1); }}
+                                >+</Button>
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="condition">Condition</Label>
+                            <Select value={condition} onValueChange={setCondition}>
+                                <SelectTrigger id="condition" className="h-10"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="Near Mint">Near Mint</SelectItem>
+                                    <SelectItem value="Lightly Played">Lightly Played</SelectItem>
+                                    <SelectItem value="Moderately Played">Moderately Played</SelectItem>
+                                    <SelectItem value="Heavily Played">Heavily Played</SelectItem>
+                                    <SelectItem value="Damaged">Damaged</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <div className="space-y-3 p-4 border rounded-lg bg-card">
+                        <Label className="text-xs uppercase text-muted-foreground font-bold">Finishes</Label>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="foil" checked={isFoil} onCheckedChange={(c) => { haptic('light'); setIsFoil(!!c); }} />
+                                <label htmlFor="foil" className="text-sm font-medium">Foil</label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="signed" checked={isSigned} onCheckedChange={(c) => { haptic('light'); setIsSigned(!!c); }} />
+                                <label htmlFor="signed" className="text-sm font-medium">Signed</label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="altered" checked={isAltered} onCheckedChange={(c) => { haptic('light'); setIsAltered(!!c); }} />
+                                <label htmlFor="altered" className="text-sm font-medium">Altered</label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox id="graded" checked={isGraded} onCheckedChange={(c) => { haptic('light'); setIsGraded(!!c); }} />
+                                <label htmlFor="graded" className="text-sm font-medium">Graded</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    {isGraded && (
+                        <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2">
+                            <div>
+                                <Label>Company</Label>
+                                <Select value={gradingCompany} onValueChange={setGradingCompany}>
+                                    <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="PSA">PSA</SelectItem>
+                                        <SelectItem value="BGS">BGS</SelectItem>
+                                        <SelectItem value="CGC">CGC</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div>
+                                <Label>Grade</Label>
+                                <Input type="number" placeholder="9.5" value={grade} onChange={(e) => setGrade(e.target.value)} />
+                            </div>
+                        </div>
+                    )}
+                </TabsContent>
+
+                <TabsContent value="marketplace" className="space-y-4">
+                    <div className="p-4 border rounded-lg bg-accent/10 border-accent/20">
+                        <div className="flex items-center space-x-2 mb-4">
+                            <Checkbox id="list-for-sale" checked={isListingForSale} onCheckedChange={(c) => setIsListingForSale(!!c)} />
+                            <label htmlFor="list-for-sale" className="font-semibold">List for Sale</label>
+                        </div>
+                        
+                        {isListingForSale && (
+                            <div className="space-y-4 animate-in slide-in-from-top-2">
+                                <div>
+                                    <Label>Your Price</Label>
+                                    <div className="relative mt-1">
+                                        <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
+                                        <Input 
+                                            type="number" 
+                                            className="pl-7" 
+                                            placeholder="0.00"
+                                            value={listPrice} 
+                                            onChange={(e) => setListPrice(e.target.value)} 
+                                        />
+                                    </div>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                    Listing as: {condition} {isFoil ? 'Foil' : ''}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </TabsContent>
             </Tabs>
 
-            <div className="flex gap-2 mt-6 pt-4 border-t">
-              <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">Cancel</Button>
-              <Button onClick={handleSave} disabled={saving} className="flex-1">{saving ? 'Saving...' : 'Save'}</Button>
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-4">
+                {isExistingCard && (
+                    <Button variant="destructive" onClick={handleDelete} className="flex-1">Remove</Button>
+                )}
+                <Button variant="outline" onClick={() => onOpenChange(false)} className="flex-1">Cancel</Button>
+                <Button onClick={handleSave} disabled={saving} className="flex-1 bg-primary hover:bg-primary/90 text-white">
+                    {saving ? 'Saving...' : 'Save Card'}
+                </Button>
             </div>
-          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+    </ResponsiveDialog>
   );
 };
