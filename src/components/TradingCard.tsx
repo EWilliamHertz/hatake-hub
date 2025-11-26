@@ -1,4 +1,3 @@
-import { Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Currency } from "@/hooks/useCurrency";
@@ -28,18 +27,11 @@ export const TradingCard = ({
   return (
     <Card
       className={cn(
-        "relative overflow-hidden transition-all hover:scale-105 cursor-pointer",
+        "relative overflow-hidden transition-all hover:scale-105 cursor-pointer group",
         className
       )}
     >
-      {/* Foil Badge - Bottom Left */}
-      {isFoil && (
-        <div className="absolute bottom-2 left-2 z-10 bg-gold/20 backdrop-blur-sm rounded-full p-1.5 border border-gold">
-          <Star className="h-4 w-4 text-gold fill-gold" />
-        </div>
-      )}
-
-      {/* Card Image */}
+      {/* Card Image Container */}
       <div className="aspect-[2.5/3.5] bg-muted relative overflow-hidden">
         {imageUrl ? (
           <img
@@ -56,8 +48,10 @@ export const TradingCard = ({
             <span className="text-sm">No Image</span>
           </div>
         )}
+        
+        {/* Rainbow Foil Effect Overlay */}
         {isFoil && (
-          <div className="absolute inset-0 pointer-events-none foil-effect" />
+          <div className="rainbow-foil" />
         )}
       </div>
 
@@ -65,16 +59,16 @@ export const TradingCard = ({
       <div className="p-3 space-y-1">
         <h3 className="font-semibold text-sm truncate">{name}</h3>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{set}</span>
+          <span className="truncate max-w-[60%]">{set}</span>
           <span
             className={cn(
-              "px-2 py-0.5 rounded-full",
+              "px-2 py-0.5 rounded-full text-[10px]",
               rarity === "Rare" && "bg-primary/20 text-primary",
               rarity === "Uncommon" && "bg-secondary/50 text-secondary-foreground",
               rarity === "Common" && "bg-muted"
             )}
           >
-            {rarity}
+            {rarity || 'Common'}
           </span>
         </div>
         {price !== undefined && price !== null && (
