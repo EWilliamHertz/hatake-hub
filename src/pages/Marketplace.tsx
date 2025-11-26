@@ -34,6 +34,7 @@ interface MarketplaceListing {
       usd_foil?: number | null;
     };
     is_foil?: boolean;
+    foil?: boolean;
   };
   sellerId: string;
   sellerData: {
@@ -44,6 +45,7 @@ interface MarketplaceListing {
   condition: string;
   isFoil?: boolean;
   is_foil?: boolean;
+  foil?: boolean;
   sale_quantity?: number;
   quantity?: number;
   game?: string;
@@ -255,7 +257,7 @@ const Marketplace = () => {
                       set={listing.cardData.set_name}
                       rarity={listing.cardData.rarity}
                       imageUrl={listing.cardData.image_uris?.normal || listing.cardData.image_uris?.small}
-                      isFoil={listing.isFoil || listing.is_foil || listing.cardData?.is_foil || false}
+                      isFoil={listing.isFoil || listing.is_foil || listing.foil || listing.cardData?.is_foil || listing.cardData?.foil || false}
                     />
                     {(listing.sale_quantity || listing.quantity) && (listing.sale_quantity || listing.quantity)! > 1 && (
                       <Badge className="absolute top-1 right-1 text-xs">
@@ -271,7 +273,7 @@ const Marketplace = () => {
                     <div className="text-lg font-bold text-primary">
                       ${listing.price.toFixed(2)}
                     </div>
-                    {listing.isFoil && (
+                    {(listing.isFoil || listing.is_foil || listing.foil || listing.cardData?.foil) && (
                       <Badge variant="secondary" className="text-xs">Foil</Badge>
                     )}
                   </div>
