@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -7,45 +7,51 @@ import {
   where,
   orderBy,
   onSnapshot,
+  addDoc,
   serverTimestamp,
   DocumentData,
   doc,
   getDoc,
   getDocs,
+  updateDoc,
   setDoc,
   limit,
-  updateDoc,
-  arrayUnion
+  Timestamp
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Search, ArrowLeft, Send } from "lucide-react";
+import { Plus, Search, ArrowLeft, Send, Loader2, User } from "lucide-react";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
+
+interface ParticipantInfo {
+  displayName: string;
+  photoURL: string;
+}
 
 interface Conversation {
   id: string;
   participants: string[];
-  participantInfo: {
-    [uid: string]: {
-      displayName: string;
-      photoURL: string;
-    };
-  };
-  messages: Message[];
   lastMessage?: string;
   updatedAt?: any;
-  createdAt?: any;
-  isGroupChat: boolean;
+  participantInfo?: Record<string, ParticipantInfo>;
+  // Legacy support: messages might be stored in an array on the document itself
+  messages?: any[]; 
+  
+  // Computed for display
+  otherUserId?: string;
+  otherUserName?: string;
+  otherUserPhotoURL?: string;
 }
 
 interface Message {
-  content: string;
+  id: string;
+  text: string;
   senderId: string;
-  timestamp: any;
+  createdAt: any;
 }
 
 interface UserProfile {
@@ -60,116 +66,156 @@ const Messenger = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isMobile = useIsMobile();
+  const scrollRef = useRef<HTMLDivElement>(null);
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState("");
+  
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
+  // Handle ?chat=userId
   useEffect(() => {
     const chatUserId = searchParams.get('chat');
-    if (chatUserId && user && conversations.length > 0) {
+    if (chatUserId && user) {
       const existing = conversations.find(c => c.participants.includes(chatUserId));
       if (existing) {
-        setActiveConversation(existing);
+        setActiveConversationId(existing.id);
       }
     }
   }, [searchParams, user, conversations]);
 
+  // Load Conversations
   useEffect(() => {
     if (!user) {
       navigate("/auth");
       return;
     }
 
-    const ensureUserProfile = async () => {
-      try {
-        const userDocRef = doc(db, "users", user.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (!userDoc.exists()) {
-          await setDoc(userDocRef, {
-            uid: user.uid,
-            email: user.email,
-            displayName: user.displayName || user.email?.split('@')[0] || 'User',
-            photoURL: user.photoURL || '',
-            createdAt: new Date(),
-          }, { merge: true });
-        }
-      } catch (error) {
-        console.error("Error ensuring user profile:", error);
-      }
-    };
-    ensureUserProfile();
-
-    const conversationsRef = collection(db, "conversations");
+    // Note: Removed orderBy("updatedAt") from query to avoid index errors. 
+    // Sorting is done client-side.
     const q = query(
-      conversationsRef, 
-      where("participants", "array-contains", user.uid),
-      orderBy("updatedAt", "desc")
+      collection(db, "conversations"), 
+      where("participants", "array-contains", user.uid)
     );
 
-    const unsub = onSnapshot(q, (snapshot) => {
-      const data: Conversation[] = snapshot.docs.map(conversationDoc => {
-        const d = conversationDoc.data() as DocumentData;
-        return {
-          id: conversationDoc.id,
-          participants: d.participants || [],
-          participantInfo: d.participantInfo || {},
-          messages: d.messages || [],
-          lastMessage: d.lastMessage || "",
-          updatedAt: d.updatedAt,
-          createdAt: d.createdAt,
-          isGroupChat: d.isGroupChat || false,
-        };
-      });
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const convs: Conversation[] = [];
       
-      setConversations(data);
-      
-      // Update active conversation if it changed
-      if (activeConversation) {
-        const updated = data.find(c => c.id === activeConversation.id);
-        if (updated) {
-          setActiveConversation(updated);
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const otherId = data.participants.find((p: string) => p !== user.uid);
+        
+        // Use participantInfo from DB if available, otherwise fallback to defaults
+        let otherName = "Unknown User";
+        let otherPhoto = "";
+
+        if (otherId && data.participantInfo && data.participantInfo[otherId]) {
+          otherName = data.participantInfo[otherId].displayName || "User";
+          otherPhoto = data.participantInfo[otherId].photoURL || "";
         }
-      }
-    }, (err) => {
-      console.error("Error fetching conversations:", err);
-      if (err.code === 'failed-precondition') {
-        console.warn("Missing index. Consider creating one in Firebase Console.");
-      }
+
+        convs.push({
+          id: docSnap.id,
+          participants: data.participants || [],
+          lastMessage: data.lastMessage || "",
+          updatedAt: data.updatedAt,
+          messages: data.messages, // Keep legacy messages array
+          participantInfo: data.participantInfo,
+          otherUserId: otherId,
+          otherUserName: otherName,
+          otherUserPhotoURL: otherPhoto
+        });
+      });
+
+      // Sort by updatedAt desc (newest first)
+      convs.sort((a, b) => {
+        const timeA = a.updatedAt?.toMillis ? a.updatedAt.toMillis() : 0;
+        const timeB = b.updatedAt?.toMillis ? b.updatedAt.toMillis() : 0;
+        return timeB - timeA;
+      });
+
+      setConversations(convs);
+    }, (error) => {
+      console.error("Error fetching conversations:", error);
+      toast.error("Could not load chats");
     });
 
-    return () => unsub();
+    return () => unsubscribe();
   }, [user, navigate]);
+
+  // Load Messages (Combines Legacy Array + New Subcollection)
+  useEffect(() => {
+    if (!activeConversationId || !user) {
+      setMessages([]);
+      return;
+    }
+
+    // 1. Get legacy messages from the conversation document itself
+    const activeConv = conversations.find(c => c.id === activeConversationId);
+    let combinedMessages: Message[] = [];
+
+    if (activeConv && Array.isArray(activeConv.messages)) {
+      combinedMessages = activeConv.messages.map((m: any, idx: number) => ({
+        id: `legacy-${idx}`,
+        text: m.content || m.text || "",
+        senderId: m.senderId,
+        createdAt: m.timestamp // Firestore timestamp or string
+      }));
+    }
+
+    // 2. Listen for NEW messages in subcollection
+    const q = query(
+      collection(db, "conversations", activeConversationId, "messages"),
+      orderBy("createdAt", "asc")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const newMessages = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Message[];
+
+      // Combine and sort
+      const finalMessages = [...combinedMessages, ...newMessages].sort((a, b) => {
+        const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt).getTime();
+        const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt).getTime();
+        return tA - tB;
+      });
+
+      setMessages(finalMessages);
+      
+      // Scroll to bottom
+      setTimeout(() => {
+        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    });
+
+    return () => unsubscribe();
+  }, [activeConversationId, conversations]); // Re-run if conversations update (legacy messages might update)
 
   const loadUsers = async () => {
     if (!user) return;
-    
     setLoadingUsers(true);
     try {
       const usersRef = collection(db, "users");
-      const q = query(usersRef, limit(50));
-      const usersSnapshot = await getDocs(q);
+      const q = query(usersRef, limit(50)); // Global search
+      const snapshot = await getDocs(q);
       
-      const allUsers: UserProfile[] = [];
-      usersSnapshot.forEach((doc) => {
-        if (doc.id === user.uid) return;
-        const data = doc.data();
-        allUsers.push({
-          uid: doc.id,
-          displayName: data.displayName || data.email?.split('@')[0] || "Unknown",
-          photoURL: (data.photoURL || "") as string,
-          email: (data.email || "") as string,
-        });
+      const userList: UserProfile[] = [];
+      snapshot.forEach(doc => {
+        if (doc.id !== user.uid) {
+          userList.push({ uid: doc.id, ...doc.data() } as UserProfile);
+        }
       });
-      
-      setUsers(allUsers);
-    } catch (err: any) {
-      console.error("Error loading users:", err);
-      toast.error("Failed to load user directory.");
+      setUsers(userList);
+    } catch (error) {
+      console.error("Failed to load users:", error);
+      toast.error("Failed to search users");
     } finally {
       setLoadingUsers(false);
     }
@@ -178,167 +224,153 @@ const Messenger = () => {
   const startChat = async (otherUser: UserProfile) => {
     if (!user) return;
 
-    try {
-      const existingLocal = conversations.find(c => c.participants.includes(otherUser.uid));
-      if (existingLocal) {
-        setActiveConversation(existingLocal);
-        setIsNewChatOpen(false);
-        return;
-      }
-
-      const conversationsRef = collection(db, "conversations");
-      const q = query(conversationsRef, where("participants", "array-contains", user.uid));
-      const snapshot = await getDocs(q);
-      
-      let existingConv: Conversation | null = null;
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.participants.includes(otherUser.uid)) {
-          existingConv = {
-            id: doc.id,
-            participants: data.participants,
-            participantInfo: data.participantInfo || {},
-            messages: data.messages || [],
-            lastMessage: data.lastMessage || "",
-            updatedAt: data.updatedAt,
-            createdAt: data.createdAt,
-            isGroupChat: data.isGroupChat || false,
-          };
-        }
-      });
-
-      if (existingConv) {
-        setActiveConversation(existingConv);
-      } else {
-        const newConvRef = doc(collection(db, "conversations"));
-        const newConversation: Omit<Conversation, 'id'> = {
-          participants: [user.uid, otherUser.uid],
-          participantInfo: {
-            [user.uid]: {
-              displayName: user.displayName || user.email?.split('@')[0] || 'User',
-              photoURL: user.photoURL || '',
-            },
-            [otherUser.uid]: {
-              displayName: otherUser.displayName,
-              photoURL: otherUser.photoURL,
-            },
-          },
-          messages: [],
-          lastMessage: "",
-          isGroupChat: false,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
-        
-        await setDoc(newConvRef, newConversation);
-        setActiveConversation({
-          id: newConvRef.id,
-          ...newConversation,
-        } as Conversation);
-      }
-      
+    // Check local
+    const existing = conversations.find(c => c.participants.includes(otherUser.uid));
+    if (existing) {
+      setActiveConversationId(existing.id);
       setIsNewChatOpen(false);
-    } catch (err) {
-      console.error("Error creating conversation:", err);
-      toast.error("Failed to start conversation");
+      return;
+    }
+
+    try {
+      // Prepare participant info map for faster reads
+      const participantInfo = {
+        [user.uid]: {
+          displayName: user.displayName || 'User',
+          photoURL: user.photoURL || ''
+        },
+        [otherUser.uid]: {
+          displayName: otherUser.displayName,
+          photoURL: otherUser.photoURL
+        }
+      };
+
+      const docRef = await addDoc(collection(db, "conversations"), {
+        participants: [user.uid, otherUser.uid],
+        participantInfo,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        lastMessage: "",
+        isGroupChat: false,
+        messages: [] // Initialize empty legacy array to prevent errors if old code reads it
+      });
+      
+      setActiveConversationId(docRef.id);
+      setIsNewChatOpen(false);
+    } catch (error) {
+      console.error("Error creating chat:", error);
+      toast.error("Failed to start chat");
     }
   };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !activeConversation || !newMessage.trim()) return;
+    if (!user || !activeConversationId || !newMessage.trim()) return;
 
-    const msgText = newMessage.trim();
-    setNewMessage("");
+    const text = newMessage.trim();
+    setNewMessage(""); // Clear input immediately
 
     try {
-      const newMsg: Message = {
-        content: msgText,
+      // 1. Add to subcollection (New way - Robust)
+      await addDoc(collection(db, "conversations", activeConversationId, "messages"), {
+        text,
         senderId: user.uid,
-        timestamp: serverTimestamp(),
-      };
-
-      await updateDoc(doc(db, "conversations", activeConversation.id), {
-        messages: arrayUnion(newMsg),
-        lastMessage: msgText,
-        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
       });
-    } catch (err) {
-      console.error("Error sending message:", err);
-      toast.error("Failed to send message");
-      setNewMessage(msgText);
+
+      // 2. Update parent document summary
+      const conversationRef = doc(db, "conversations", activeConversationId);
+      await updateDoc(conversationRef, {
+        lastMessage: text,
+        updatedAt: serverTimestamp()
+      });
+
+    } catch (error) {
+      console.error("Error sending message:", error);
+      toast.error("Failed to send");
+      setNewMessage(text); // Restore text on failure
     }
   };
 
-  const filteredUsers = users.filter((u) => {
-    if (!searchQuery.trim()) return true;
-    return (
-      u.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+  const formatTime = (timestamp: any) => {
+    if (!timestamp) return "";
+    try {
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      if (isNaN(date.getTime())) return "";
+      
+      const now = new Date();
+      const isToday = date.getDate() === now.getDate() && 
+                      date.getMonth() === now.getMonth() && 
+                      date.getFullYear() === now.getFullYear();
+      
+      return isToday 
+        ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    } catch {
+      return "";
+    }
+  };
+
+  const filteredUsers = users.filter(u => {
+    if (!searchQuery) return true;
+    const lower = searchQuery.toLowerCase();
+    return u.displayName?.toLowerCase().includes(lower) || u.email?.toLowerCase().includes(lower);
   });
 
-  const showSidebar = !isMobile || (isMobile && !activeConversation);
-  const showChat = !isMobile || (isMobile && activeConversation);
-  
-  const getOtherUserInfo = (conv: Conversation) => {
-    const otherUserId = conv.participants.find(id => id !== user?.uid);
-    if (!otherUserId) return { name: 'Unknown', photo: '' };
-    const info = conv.participantInfo[otherUserId];
-    return {
-      name: info?.displayName || 'Unknown',
-      photo: info?.photoURL || '',
-    };
-  };
+  // Mobile Layout Toggles
+  const showSidebar = !isMobile || (isMobile && !activeConversationId);
+  const showChat = !isMobile || (isMobile && activeConversationId);
 
   return (
     <div className="min-h-screen bg-background pb-20 flex">
-      <aside className={`${showSidebar ? 'w-full md:w-2/5' : 'hidden md:flex md:w-2/5'} border-r border-border h-[calc(100vh-5rem)] flex-col`}>
-        <div className="px-4 py-4 border-b border-border flex items-center justify-between bg-card">
+      {/* --- SIDEBAR LIST --- */}
+      <aside className={`${showSidebar ? 'w-full md:w-1/3 lg:w-1/4' : 'hidden md:flex md:w-1/3 lg:w-1/4'} border-r border-border flex flex-col bg-card`}>
+        <div className="p-4 border-b border-border flex items-center justify-between">
           <h1 className="text-xl font-bold">Messenger</h1>
-          <Dialog open={isNewChatOpen} onOpenChange={(open) => {
-            setIsNewChatOpen(open);
-            if (open) {
-              setSearchQuery("");
-              loadUsers();
-            }
+          <Dialog open={isNewChatOpen} onOpenChange={(val) => {
+            setIsNewChatOpen(val);
+            if (val) loadUsers();
           }}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="ghost">
+              <Button size="icon" variant="ghost">
                 <Plus className="h-5 w-5" />
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Start New Chat</DialogTitle>
+                <DialogTitle>New Message</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search user by name..."
+                  <Input 
+                    placeholder="Search users..." 
+                    className="pl-9"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
                   />
                 </div>
                 <div className="max-h-[300px] overflow-y-auto space-y-2">
                   {loadingUsers ? (
-                    <p className="text-center text-sm text-muted-foreground">Loading...</p>
+                    <div className="flex justify-center p-4"><Loader2 className="animate-spin h-6 w-6" /></div>
                   ) : filteredUsers.length === 0 ? (
-                    <p className="text-center text-sm text-muted-foreground">No users found.</p>
+                    <p className="text-center text-muted-foreground text-sm py-4">No users found</p>
                   ) : (
                     filteredUsers.map(u => (
-                      <div key={u.uid} onClick={() => startChat(u)} className="flex items-center gap-3 p-2 hover:bg-muted rounded cursor-pointer">
+                      <button 
+                        key={u.uid} 
+                        onClick={() => startChat(u)}
+                        className="w-full flex items-center gap-3 p-2 hover:bg-muted rounded-lg transition-colors"
+                      >
                         <Avatar>
                           <AvatarImage src={u.photoURL} />
-                          <AvatarFallback>{u.displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                          <AvatarFallback><User className="h-4 w-4" /></AvatarFallback>
                         </Avatar>
-                        <div>
-                          <p className="font-medium">{u.displayName}</p>
+                        <div className="text-left">
+                          <p className="font-medium text-sm">{u.displayName}</p>
                           <p className="text-xs text-muted-foreground">{u.email}</p>
                         </div>
-                      </div>
+                      </button>
                     ))
                   )}
                 </div>
@@ -348,80 +380,93 @@ const Messenger = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {conversations.map(c => {
-            const otherUser = getOtherUserInfo(c);
-            return (
-              <div
-                key={c.id}
-                onClick={() => setActiveConversation(c)}
-                className={`flex items-center gap-3 p-4 border-b border-border cursor-pointer hover:bg-muted/50 transition-colors ${activeConversation?.id === c.id ? 'bg-muted' : ''}`}
-              >
-                <Avatar>
-                  <AvatarImage src={otherUser.photo} />
-                  <AvatarFallback>{otherUser.name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-baseline">
-                    <p className="font-semibold text-sm truncate">{otherUser.name}</p>
-                    {c.updatedAt && (
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(c.updatedAt?.toDate ? c.updatedAt.toDate() : c.updatedAt).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-muted-foreground truncate">{c.lastMessage || "No messages yet"}</p>
+          {conversations.map(c => (
+            <button
+              key={c.id}
+              onClick={() => setActiveConversationId(c.id)}
+              className={`w-full flex items-center gap-3 p-4 border-b border-border hover:bg-muted/50 transition-colors text-left ${activeConversationId === c.id ? 'bg-muted' : ''}`}
+            >
+              <Avatar>
+                <AvatarImage src={c.otherUserPhotoURL} />
+                <AvatarFallback>{(c.otherUserName?.[0] || '?').toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="font-semibold text-sm truncate">{c.otherUserName}</span>
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">
+                    {formatTime(c.updatedAt)}
+                  </span>
                 </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  {c.lastMessage || <span className="italic">No messages</span>}
+                </p>
               </div>
-            );
-          })}
+            </button>
+          ))}
           {conversations.length === 0 && (
-            <div className="p-8 text-center text-muted-foreground">
-              <p>No conversations yet.</p>
-              <Button variant="link" onClick={() => setIsNewChatOpen(true)}>Find someone to chat with</Button>
+            <div className="p-8 text-center text-muted-foreground text-sm">
+              No active conversations.
             </div>
           )}
         </div>
       </aside>
 
-      <main className={`${showChat ? 'w-full md:w-3/5' : 'hidden md:flex md:w-3/5'} flex-col h-[calc(100vh-5rem)] bg-background`}>
-        {activeConversation ? (
+      {/* --- CHAT WINDOW --- */}
+      <main className={`${showChat ? 'w-full flex' : 'hidden md:flex'} flex-1 flex-col bg-background h-[calc(100vh-4rem)] relative`}>
+        {activeConversationId ? (
           <>
-            <div className="p-4 border-b border-border flex items-center gap-3 bg-card shadow-sm">
-              <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setActiveConversation(null)}>
+            {/* Chat Header */}
+            <header className="h-16 border-b border-border flex items-center px-4 gap-3 shadow-sm z-10 bg-card/50 backdrop-blur">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="md:hidden -ml-2"
+                onClick={() => setActiveConversationId(null)}
+              >
                 <ArrowLeft className="h-5 w-5" />
               </Button>
-              <div className="flex items-center gap-3">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={getOtherUserInfo(activeConversation).photo} />
-                  <AvatarFallback>{getOtherUserInfo(activeConversation).name.substring(0, 2).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <span className="font-semibold">
-                  {getOtherUserInfo(activeConversation).name}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {(!activeConversation.messages || activeConversation.messages.length === 0) && (
-                <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                  Say hello! 👋
+              
+              {conversations.find(c => c.id === activeConversationId) && (
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={conversations.find(c => c.id === activeConversationId)?.otherUserPhotoURL} />
+                    <AvatarFallback>?</AvatarFallback>
+                  </Avatar>
+                  <span className="font-semibold">
+                    {conversations.find(c => c.id === activeConversationId)?.otherUserName}
+                  </span>
                 </div>
               )}
-              {activeConversation.messages?.map((msg, idx) => (
-                <div key={idx} className={`flex ${msg.senderId === user?.uid ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] p-3 rounded-xl text-sm ${msg.senderId === user?.uid ? 'bg-primary text-primary-foreground rounded-br-none' : 'bg-muted text-foreground rounded-bl-none'}`}>
-                    {msg.content}
+            </header>
+
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {messages.map((msg) => (
+                <div 
+                  key={msg.id} 
+                  className={`flex ${msg.senderId === user?.uid ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div 
+                    className={`max-w-[75%] px-4 py-2 rounded-2xl text-sm shadow-sm ${
+                      msg.senderId === user?.uid 
+                        ? 'bg-primary text-primary-foreground rounded-br-sm' 
+                        : 'bg-muted text-foreground rounded-bl-sm'
+                    }`}
+                  >
+                    {msg.text}
                   </div>
                 </div>
               ))}
+              <div ref={scrollRef} />
             </div>
 
+            {/* Input Area */}
             <div className="p-4 bg-card border-t border-border">
-              <form onSubmit={handleSend} className="flex gap-2">
+              <form onSubmit={handleSend} className="flex gap-2 max-w-3xl mx-auto">
                 <Input 
-                  value={newMessage} 
-                  onChange={e => setNewMessage(e.target.value)} 
-                  placeholder="Type a message..." 
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Type a message..."
                   className="flex-1"
                 />
                 <Button type="submit" size="icon" disabled={!newMessage.trim()}>
@@ -431,11 +476,11 @@ const Messenger = () => {
             </div>
           </>
         ) : (
-          <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
-            <div className="bg-muted p-4 rounded-full mb-4">
-              <Search className="h-8 w-8 opacity-50" />
+          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8">
+            <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4">
+              <Search className="h-8 w-8 opacity-20" />
             </div>
-            <p>Select a conversation or start a new one.</p>
+            <p>Select a conversation to start chatting</p>
           </div>
         )}
       </main>
