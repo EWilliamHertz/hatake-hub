@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { collection, query, orderBy, limit, onSnapshot, getDocs } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -66,8 +66,6 @@ const Marketplace = () => {
   const [filterFoilOnly, setFilterFoilOnly] = useState<boolean>(false);
   const [minPrice, setMinPrice] = useState<string>("");
   const [maxPrice, setMaxPrice] = useState<string>("");
-  const [lastVisible, setLastVisible] = useState<any>(null);
-  const [hasMore, setHasMore] = useState(true);
 
   useEffect(() => {
     if (!user) {
@@ -77,7 +75,7 @@ const Marketplace = () => {
 
     // Listen to marketplace listings in real-time (Firestore collection: marketplaceListings)
     const marketplaceRef = collection(db, 'marketplaceListings');
-    const q = query(marketplaceRef, orderBy('listedAt', 'desc'), limit(50));
+    const q = query(marketplaceRef, orderBy('listedAt', 'desc'));
     
     const unsubscribe = onSnapshot(
       q, 
@@ -87,8 +85,6 @@ const Marketplace = () => {
           listingsData.push({ id: doc.id, ...doc.data() } as MarketplaceListing);
         });
         setListings(listingsData);
-        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-        setHasMore(snapshot.docs.length === 50);
         setLoading(false);
         setError(null);
       },
@@ -105,35 +101,6 @@ const Marketplace = () => {
   const handleMakeOffer = (listing: MarketplaceListing) => {
     setSelectedListing(listing);
     setIsOfferDialogOpen(true);
-  };
-
-  const loadMoreListings = async () => {
-    if (!lastVisible || !hasMore) return;
-    
-    setLoading(true);
-    try {
-      const marketplaceRef = collection(db, 'marketplaceListings');
-      const q = query(
-        marketplaceRef, 
-        orderBy('listedAt', 'desc'), 
-        limit(50)
-      );
-      
-      const snapshot = await getDocs(q);
-      const moreListings: MarketplaceListing[] = [];
-      snapshot.forEach((doc) => {
-        moreListings.push({ id: doc.id, ...doc.data() } as MarketplaceListing);
-      });
-      
-      setListings(prev => [...prev, ...moreListings]);
-      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-      setHasMore(snapshot.docs.length === 50);
-    } catch (err: any) {
-      console.error('Error loading more listings:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
   };
 
   const filteredListings = listings.filter((listing) => {
@@ -276,7 +243,7 @@ const Marketplace = () => {
             <p className="text-muted-foreground">No listings match your filters</p>
           </Card>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
             {filteredListings.map((listing) => (
               <Card key={listing.id} className="overflow-hidden">
                 {/* Card Preview */}
@@ -325,14 +292,6 @@ const Marketplace = () => {
                 </div>
               </Card>
             ))}
-          </div>
-        )}
-        
-        {!loading && hasMore && filteredListings.length > 0 && (
-          <div className="flex justify-center mt-6">
-            <Button onClick={loadMoreListings} variant="outline">
-              Load More
-            </Button>
           </div>
         )}
       </div>
