@@ -282,9 +282,13 @@ const Messenger = () => {
   }, [user]);
 
   const filteredUsers = users.filter((u) => {
-    if (!searchQuery.trim()) return true; // Show all users when no search query
-    const haystack = `${u.displayName} ${u.email}`.toLowerCase();
-    return haystack.includes(searchQuery.toLowerCase().trim());
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase().trim();
+    const displayName = (u.displayName || '').toLowerCase();
+    const email = (u.email || '').toLowerCase();
+    
+    // Search by partial display name or email
+    return displayName.includes(query) || email.includes(query);
   });
 
   return (
