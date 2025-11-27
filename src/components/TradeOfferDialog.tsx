@@ -62,7 +62,7 @@ export const TradeOfferDialog = ({
         proposerId: user.uid,
         proposerName: user.displayName || 'Anonymous',
         receiverId: sellerId,
-        receiverName: 'Seller', // Ideally fetching this would be better, but 'Seller' works for now
+        receiverName: 'Seller', // ideally fetch this, but Trades page can handle displaying it if stored
         participants: [user.uid, sellerId],
         
         // Structure for a "Buy" trade: 
@@ -73,7 +73,9 @@ export const TradeOfferDialog = ({
         receiverItems: cardData ? [cardData] : [{
           id: listingId,
           name: cardName,
-          set_name: 'Marketplace Item'
+          set_name: 'Marketplace Item',
+          image_uri: 'https://via.placeholder.com/40x56', // Placeholder if missing
+          rarity: 'Unknown'
         }],
         receiverMoney: 0,
         

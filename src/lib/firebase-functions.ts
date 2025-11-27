@@ -8,8 +8,9 @@ export interface SearchScryDexParams {
   page?: number;
   limit?: number;
 }
+
 export interface CheckoutParams {
-  lineItems: Array<{
+  cartItems: Array<{ // Renamed to match backend expectation if needed, or keep lineItems
     price: string;
     quantity: number;
   }>;
@@ -17,14 +18,16 @@ export interface CheckoutParams {
   cancelUrl: string;
 }
 
-export const createStripeCheckout = async (params: CheckoutParams) => {
-  const checkoutFunction = httpsCallable<CheckoutParams, { url: string }>(
+// ✅ FIXED: Renamed to createCheckoutSession to match Shop.tsx and Backend
+export const createCheckoutSession = async (params: CheckoutParams) => {
+  const checkoutFunction = httpsCallable<CheckoutParams, { id: string, url?: string }>(
     functions, 
-    'createStripeCheckout'
+    'createCheckoutSession' // Matches the backend function name
   );
   const result = await checkoutFunction(params);
   return result.data;
 };
+
 export interface CardResult {
   id: string;
   api_id: string;
@@ -66,7 +69,6 @@ export interface SearchResult {
 
 export const searchScryDex = async (params: SearchScryDexParams): Promise<SearchResult> => {
   try {
-    // Map game names to match backend expectations
     const gameMap: Record<string, string> = {
       'magic': 'mtg',
       'pokemon': 'pokemon',
@@ -85,17 +87,15 @@ export const searchScryDex = async (params: SearchScryDexParams): Promise<Search
     return result.data;
   } catch (error: any) {
     console.error('Search error:', error);
-    const errorMessage = error?.message || 'Search failed';
     return {
       success: false,
       data: [],
       has_more: false,
-      error: errorMessage
+      error: error?.message || 'Search failed'
     };
   }
 };
 
-// Exchange Rates Function
 export interface ExchangeRatesResult {
   rates: Record<string, number>;
 }
@@ -109,7 +109,6 @@ export const getExchangeRates = async (baseCurrency: string = 'USD'): Promise<Ex
   return result.data;
 };
 
-// Wishlist Management Function
 export interface WishlistParams {
   action: 'add' | 'remove';
   cardData: CardResult;
@@ -121,7 +120,6 @@ export const manageWishlist = async (params: WishlistParams) => {
   return result.data;
 };
 
-// Price History Function
 export interface PriceHistoryParams {
   cardId: string;
   game: string;
@@ -130,5 +128,15 @@ export interface PriceHistoryParams {
 export const getCardPriceHistory = async (params: PriceHistoryParams) => {
   const priceFunction = httpsCallable(functions, 'getCardPriceHistory');
   const result = await priceFunction(params);
+  return result.data;
+};
+
+// ✅ NEW: Added Order Status Update Function
+export const updateOrderStatus = async (params: { orderId: string, status: 'sent' | 'received' }) => {
+  const updateFunction = httpsCallable<{ orderId: string, status: string }, { success: boolean }>(
+    functions, 
+    'updateOrderStatus'
+  );
+  const result = await updateFunction(params);
   return result.data;
 };

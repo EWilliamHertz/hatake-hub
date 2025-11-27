@@ -4,7 +4,7 @@ import { useCart } from "@/contexts/CartContext";
 import { useNavigate } from "react-router-dom";
 import { collection, query, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { createStripeCheckout } from "@/lib/firebase-functions"; // ✅ Uses your new helper
+import { createCheckoutSession } from "@/lib/firebase-functions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ShoppingCart, Package } from "lucide-react";
@@ -114,8 +114,8 @@ const Shop = () => {
       });
 
       // 2. Call the Cloud Function via Firebase SDK (Secure & CORS-friendly)
-      const session = await createStripeCheckout({
-        lineItems,
+      const session = await createCheckoutSession({
+        cartItems,
         successUrl: `${window.location.origin}/shop?success=true`,
         cancelUrl: `${window.location.origin}/shop?canceled=true`,
       });
@@ -250,11 +250,21 @@ const Shop = () => {
         onCheckout={handleCartCheckout}
       />
       
-      <ProductModal 
-        product={selectedProduct} 
-        isOpen={!!selectedProduct} 
-        onClose={() => setSelectedProduct(null)} 
-      />
+  <ProductModal 
+  product={selectedProduct} 
+  isOpen={!!selectedProduct} 
+  onClose={() => setSelectedProduct(null)}
+  onAddToCart={(product: any) => {
+    // Re-use your existing logic
+    addToCart({
+      productId: product.id,
+      name: product.name,
+      price: product.price,
+      imageUrl: product.galleryImageUrls?.[0],
+    });
+    toast.success(`${product.name} added to cart`);
+  }}
+/>
     </div>
   );
 };

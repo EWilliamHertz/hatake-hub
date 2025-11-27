@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, limit, orderBy, serverTimestamp, startAt, endAt } from "firebase/firestore";
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, limit, orderBy, serverTimestamp, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { updateOrderStatus } from "@/lib/firebase-functions"; 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TradingCard } from "@/components/TradingCard";
-import { Plus, Search, RefreshCw, Check, X, DollarSign, AlertCircle } from "lucide-react";
+import { Plus, Search, RefreshCw, Check, X, DollarSign, AlertCircle, Truck, PackageCheck, MapPin, ArrowRightLeft, Clock, History } from "lucide-react";
 import { toast } from "sonner";
 
 // Types
@@ -22,6 +23,7 @@ interface TradeItem {
   image_uri?: string;
   rarity?: string;
   is_foil?: boolean;
+  price?: number; // Added optional price field for value calc
 }
 
 interface Trade {
@@ -34,7 +36,7 @@ interface Trade {
   receiverItems: TradeItem[];
   proposerMoney: number;
   receiverMoney: number;
-  status: 'pending' | 'accepted' | 'rejected' | 'completed';
+  status: 'pending' | 'accepted' | 'rejected' | 'completed' | 'sent' | 'received'; 
   updatedAt: any;
   participants: string[];
 }
@@ -46,12 +48,14 @@ const Trades = () => {
   const [loading, setLoading] = useState(true);
   const [queryError, setQueryError] = useState<string | null>(null);
 
+  // Address View State
+  const [addressModalOpen, setAddressModalOpen] = useState(false);
+  const [viewingAddress, setViewingAddress] = useState<{name: string, address: any} | null>(null);
+
   useEffect(() => {
     if (!user) return;
     
-    // Note: This query requires a Composite Index in Firestore
-    // Collection: trades
-    // Fields: participants (Arrays), updatedAt (Descending)
+    // Main Query
     const q = query(
       collection(db, "trades"),
       where("participants", "array-contains", user.uid),
@@ -64,7 +68,7 @@ const Trades = () => {
       setQueryError(null);
     }, (err) => {
       console.error("Trade fetch error:", err);
-      // Fallback query if index is missing (shows trades but unordered)
+      // Fallback logic if index is missing
       if (err.code === 'failed-precondition' || err.message.includes('index')) {
          setQueryError("Missing Index");
          const fallbackQ = query(
@@ -82,6 +86,7 @@ const Trades = () => {
     return () => unsubscribe();
   }, [user]);
 
+  // Handlers
   const handleUpdateStatus = async (tradeId: string, newStatus: string) => {
     try {
       await updateDoc(doc(db, "trades", tradeId), { status: newStatus, updatedAt: serverTimestamp() });
@@ -91,116 +96,302 @@ const Trades = () => {
     }
   };
 
+  const handleCloudStatusUpdate = async (tradeId: string, status: 'sent' | 'received') => {
+    try {
+        toast.info("Updating status...");
+        await updateOrderStatus({ orderId: tradeId, status }); 
+        toast.success(`Marked as ${status}!`);
+    } catch (error: any) {
+        console.error(error);
+        toast.error(error.message || "Failed to update status");
+    }
+  };
+
+  const handleViewShipping = async (userId: string, userName: string) => {
+      try {
+          const userDoc = await getDoc(doc(db, "users", userId));
+          if (userDoc.exists()) {
+              const userData = userDoc.data();
+              const address = userData.address || {
+                  street: userData.street || "Not provided",
+                  city: userData.city || "Not provided",
+                  zip: userData.zip || userData.postalCode || "",
+                  country: userData.country || "Not provided"
+              };
+              setViewingAddress({ name: userName, address });
+              setAddressModalOpen(true);
+          } else {
+              toast.error("User details not found.");
+          }
+      } catch (e) {
+          toast.error("Failed to fetch address.");
+      }
+  };
+
+  // Filter Logic
+  const incomingTrades = trades.filter(t => t.receiverId === user?.uid && t.status === 'pending');
+  const outgoingTrades = trades.filter(t => t.proposerId === user?.uid && t.status === 'pending');
+  const activeTrades = trades.filter(t => ['accepted', 'sent', 'received'].includes(t.status));
+  const historyTrades = trades.filter(t => ['completed', 'rejected', 'cancelled'].includes(t.status));
+
   return (
-    <div className="min-h-screen bg-background pb-20">
-      <header className="sticky top-0 z-40 bg-card border-b border-border px-4 py-4 flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Trades</h1>
+    <div className="min-h-screen bg-background pb-24">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-card/80 backdrop-blur-md border-b border-border px-4 py-4 flex justify-between items-center shadow-sm">
+        <h1 className="text-2xl font-bold flex items-center gap-2">
+          <ArrowRightLeft className="h-6 w-6 text-primary" />
+          Trades
+        </h1>
         <Button onClick={() => setIsNewTradeOpen(true)} size="sm" className="gap-2">
           <Plus className="h-4 w-4" /> New Trade
         </Button>
       </header>
 
       {queryError && (
-        <div className="bg-amber-500/10 text-amber-500 p-2 text-xs text-center border-b border-amber-500/20">
+        <div className="bg-amber-500/10 text-amber-500 p-3 text-xs text-center border-b border-amber-500/20">
           <AlertCircle className="inline h-3 w-3 mr-1" />
-          Trades may be unordered (Database Indexing...)
+          <span className="font-semibold">Database Index Required:</span> Trades are currently unordered. Open console to create index.
         </div>
       )}
 
-      <div className="max-w-3xl mx-auto p-4 space-y-4">
-        {loading ? (
-          <p className="text-center text-muted-foreground animate-pulse">Loading trades...</p>
-        ) : trades.length === 0 ? (
-          <div className="text-center py-10 text-muted-foreground">
-            <RefreshCw className="h-12 w-12 mx-auto mb-4 opacity-20" />
-            <p>No active trades.</p>
-            <p className="text-xs mt-2 opacity-50">Create one or buy from the marketplace!</p>
-          </div>
-        ) : (
-          trades.map((trade) => (
-            <TradeCard key={trade.id} trade={trade} currentUserId={user!.uid} onUpdate={handleUpdateStatus} />
-          ))
-        )}
+      {/* Main Content with Tabs */}
+      <div className="max-w-3xl mx-auto p-4">
+        <Tabs defaultValue="incoming" className="w-full">
+          <TabsList className="grid w-full grid-cols-4 mb-4">
+            <TabsTrigger value="incoming" className="text-xs sm:text-sm">Incoming ({incomingTrades.length})</TabsTrigger>
+            <TabsTrigger value="outgoing" className="text-xs sm:text-sm">Outgoing ({outgoingTrades.length})</TabsTrigger>
+            <TabsTrigger value="active" className="text-xs sm:text-sm">Active ({activeTrades.length})</TabsTrigger>
+            <TabsTrigger value="history" className="text-xs sm:text-sm">History</TabsTrigger>
+          </TabsList>
+
+          {loading ? (
+             <div className="py-12 text-center text-muted-foreground animate-pulse">Loading trade data...</div>
+          ) : (
+            <>
+              <TabsContent value="incoming" className="space-y-4">
+                {incomingTrades.length === 0 ? <EmptyState message="No incoming trade requests." /> : 
+                  incomingTrades.map(trade => (
+                    <TradeCard key={trade.id} trade={trade} currentUserId={user!.uid} onUpdate={handleUpdateStatus} onCloudUpdate={handleCloudStatusUpdate} onViewShipping={handleViewShipping} />
+                  ))
+                }
+              </TabsContent>
+
+              <TabsContent value="outgoing" className="space-y-4">
+                {outgoingTrades.length === 0 ? <EmptyState message="You haven't sent any trade requests." /> : 
+                  outgoingTrades.map(trade => (
+                    <TradeCard key={trade.id} trade={trade} currentUserId={user!.uid} onUpdate={handleUpdateStatus} onCloudUpdate={handleCloudStatusUpdate} onViewShipping={handleViewShipping} />
+                  ))
+                }
+              </TabsContent>
+
+              <TabsContent value="active" className="space-y-4">
+                {activeTrades.length === 0 ? <EmptyState message="No active trades in progress." /> : 
+                  activeTrades.map(trade => (
+                    <TradeCard key={trade.id} trade={trade} currentUserId={user!.uid} onUpdate={handleUpdateStatus} onCloudUpdate={handleCloudStatusUpdate} onViewShipping={handleViewShipping} />
+                  ))
+                }
+              </TabsContent>
+
+              <TabsContent value="history" className="space-y-4">
+                {historyTrades.length === 0 ? <EmptyState message="No trade history." /> : 
+                  historyTrades.map(trade => (
+                    <TradeCard key={trade.id} trade={trade} currentUserId={user!.uid} onUpdate={handleUpdateStatus} onCloudUpdate={handleCloudStatusUpdate} onViewShipping={handleViewShipping} />
+                  ))
+                }
+              </TabsContent>
+            </>
+          )}
+        </Tabs>
       </div>
 
       <NewTradeDialog open={isNewTradeOpen} onOpenChange={setIsNewTradeOpen} currentUser={user} />
+      
+      {/* Shipping Address Modal */}
+      <Dialog open={addressModalOpen} onOpenChange={setAddressModalOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Shipping Information</DialogTitle>
+                <DialogDescription>Ship items to {viewingAddress?.name}</DialogDescription>
+            </DialogHeader>
+            <div className="p-4 bg-muted/50 rounded-md space-y-3 text-sm">
+                {viewingAddress ? (
+                    <>
+                        <div className="flex items-center gap-2 mb-2">
+                            <MapPin className="h-4 w-4 text-primary" />
+                            <span className="font-semibold">{viewingAddress.name}</span>
+                        </div>
+                        <div className="pl-6 space-y-1 text-muted-foreground">
+                            <p>{viewingAddress.address.street}</p>
+                            <p>{viewingAddress.address.zip} {viewingAddress.address.city}</p>
+                            <p className="font-medium text-foreground">{viewingAddress.address.country}</p>
+                        </div>
+                    </>
+                ) : <p>Loading...</p>}
+            </div>
+            <Button onClick={() => setAddressModalOpen(false)}>Close</Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
-// ... TradeCard Component remains same ...
-const TradeCard = ({ trade, currentUserId, onUpdate }: { trade: Trade, currentUserId: string, onUpdate: any }) => {
+const EmptyState = ({ message }: { message: string }) => (
+  <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-lg">
+    <RefreshCw className="h-10 w-10 mx-auto mb-3 opacity-20" />
+    <p>{message}</p>
+  </div>
+);
+
+const TradeCard = ({ trade, currentUserId, onUpdate, onCloudUpdate, onViewShipping }: any) => {
   const isIncoming = trade.receiverId === currentUserId;
   const partnerName = isIncoming ? trade.proposerName : trade.receiverName;
+  const partnerId = isIncoming ? trade.proposerId : trade.receiverId;
+
+  // Items logic
+  const myItems = isIncoming ? trade.receiverItems : trade.proposerItems;
+  const theirItems = isIncoming ? trade.proposerItems : trade.receiverItems;
+  const myMoney = isIncoming ? trade.receiverMoney : trade.proposerMoney;
+  const theirMoney = isIncoming ? trade.proposerMoney : trade.receiverMoney;
 
   return (
-    <Card className="p-4 space-y-4">
-      <div className="flex justify-between items-center">
+    <Card className="overflow-hidden border-border/60 shadow-sm">
+      {/* Header Bar */}
+      <div className="bg-muted/30 p-3 flex justify-between items-center border-b">
         <div className="flex items-center gap-2">
-          <Badge variant={trade.status === 'pending' ? 'secondary' : trade.status === 'accepted' ? 'default' : 'destructive'}>
+          <Badge variant={
+            trade.status === 'pending' ? 'secondary' : 
+            trade.status === 'accepted' ? 'default' : 
+            trade.status === 'sent' ? 'default' :
+            trade.status === 'received' ? 'outline' : 
+            'destructive'
+          }>
             {trade.status.toUpperCase()}
           </Badge>
-          <span className="text-sm text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {isIncoming ? "From" : "To"} <span className="font-semibold text-foreground">{partnerName}</span>
           </span>
         </div>
-        <span className="text-xs text-muted-foreground">
+        <div className="flex items-center text-xs text-muted-foreground gap-1">
+           <Clock className="h-3 w-3" />
            {trade.updatedAt?.seconds ? new Date(trade.updatedAt.seconds * 1000).toLocaleDateString() : 'Just now'}
-        </span>
+        </div>
       </div>
 
       {/* Trade Content Grid */}
-      <div className="grid grid-cols-2 gap-4 text-sm relative">
+      <div className="grid grid-cols-2 text-sm">
+        
         {/* Left Side (You) */}
-        <div className="space-y-2">
-          <p className="font-semibold text-xs uppercase text-muted-foreground">You {isIncoming ? "Get" : "Give"}</p>
-          <ScrollArea className="h-32 rounded-md border bg-muted/20 p-2">
-            {isIncoming ? renderItems(trade.proposerItems, trade.proposerMoney) : renderItems(trade.receiverItems, trade.receiverMoney)}
-          </ScrollArea>
-        </div>
-
-        {/* Center Divider Icon */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background p-1 rounded-full border">
-          <RefreshCw className="h-4 w-4 text-muted-foreground" />
+        <div className="p-4 border-r relative">
+          <p className="font-bold text-xs uppercase text-muted-foreground mb-3 flex justify-between">
+            You Give
+            {myMoney > 0 && <span className="text-green-600 bg-green-50 px-1.5 rounded">+${myMoney}</span>}
+          </p>
+          <div className="min-h-[80px]">
+            {myItems && myItems.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                    {myItems.map((item: any) => (
+                        <div key={item.id} className="relative aspect-[2.5/3.5] bg-muted rounded overflow-hidden border">
+                            {item.image_uri ? (
+                                <img src={item.image_uri} alt={item.name} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[8px] p-1 text-center break-all">{item.name}</div>
+                            )}
+                            {item.is_foil && <div className="absolute bottom-0 right-0 bg-yellow-400 text-[8px] font-bold px-1 text-black">FOIL</div>}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground italic text-xs">
+                    {myMoney > 0 ? "Only Cash" : "Nothing"}
+                </div>
+            )}
+          </div>
         </div>
 
         {/* Right Side (Them) */}
-        <div className="space-y-2 text-right">
-          <p className="font-semibold text-xs uppercase text-muted-foreground">{partnerName} {isIncoming ? "Gets" : "Gives"}</p>
-          <ScrollArea className="h-32 rounded-md border bg-muted/20 p-2">
-             {isIncoming ? renderItems(trade.receiverItems, trade.receiverMoney) : renderItems(trade.proposerItems, trade.proposerMoney)}
-          </ScrollArea>
+        <div className="p-4">
+          <p className="font-bold text-xs uppercase text-muted-foreground mb-3 flex justify-between">
+            You Get
+            {theirMoney > 0 && <span className="text-green-600 bg-green-50 px-1.5 rounded">+${theirMoney}</span>}
+          </p>
+          <div className="min-h-[80px]">
+            {theirItems && theirItems.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                    {theirItems.map((item: any) => (
+                        <div key={item.id} className="relative aspect-[2.5/3.5] bg-muted rounded overflow-hidden border">
+                            {item.image_uri ? (
+                                <img src={item.image_uri} alt={item.name} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[8px] p-1 text-center break-all">{item.name}</div>
+                            )}
+                            {item.is_foil && <div className="absolute bottom-0 right-0 bg-yellow-400 text-[8px] font-bold px-1 text-black">FOIL</div>}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground italic text-xs">
+                    {theirMoney > 0 ? "Only Cash" : "Nothing"}
+                </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Actions */}
-      {trade.status === 'pending' && isIncoming && (
-        <div className="flex gap-2 pt-2">
-          <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => onUpdate(trade.id, 'accepted')}>
-            <Check className="h-4 w-4 mr-2" /> Accept
-          </Button>
-          <Button className="flex-1" variant="destructive" onClick={() => onUpdate(trade.id, 'rejected')}>
-            <X className="h-4 w-4 mr-2" /> Reject
-          </Button>
-        </div>
-      )}
+      {/* Action Footer */}
+      <div className="bg-muted/10 p-3 border-t">
+        {/* Pending Actions */}
+        {trade.status === 'pending' && isIncoming && (
+            <div className="flex gap-2">
+            <Button className="flex-1 bg-green-600 hover:bg-green-700 h-9" onClick={() => onUpdate(trade.id, 'accepted')}>
+                <Check className="h-4 w-4 mr-2" /> Accept
+            </Button>
+            <Button className="flex-1 h-9" variant="destructive" onClick={() => onUpdate(trade.id, 'rejected')}>
+                <X className="h-4 w-4 mr-2" /> Reject
+            </Button>
+            </div>
+        )}
+        {trade.status === 'pending' && !isIncoming && (
+             <Button className="w-full h-9" variant="outline" disabled>
+                Waiting for response...
+            </Button>
+        )}
+
+        {/* Active Trade Actions */}
+        {['accepted', 'sent', 'received'].includes(trade.status) && (
+            <div className="flex flex-col gap-2">
+                <Button variant="outline" className="w-full h-9" onClick={() => onViewShipping(partnerId, partnerName)}>
+                    <MapPin className="h-4 w-4 mr-2" /> View Shipping Info
+                </Button>
+                
+                <div className="flex gap-2">
+                    <Button 
+                        className={`flex-1 h-9 ${trade.status === 'sent' ? 'bg-green-100 text-green-800 hover:bg-green-200' : ''}`}
+                        variant="secondary" 
+                        onClick={() => onCloudUpdate(trade.id, 'sent')}
+                        disabled={trade.status === 'sent' || trade.status === 'received'} 
+                    >
+                        {trade.status === 'sent' ? <Check className="h-4 w-4 mr-2"/> : <Truck className="h-4 w-4 mr-2" />} 
+                        {trade.status === 'sent' ? 'Sent' : 'Mark Sent'}
+                    </Button>
+                    
+                    <Button 
+                        className="flex-1 h-9" 
+                        variant="secondary" 
+                        onClick={() => onCloudUpdate(trade.id, 'received')}
+                        disabled={trade.status === 'received'} 
+                    >
+                        <PackageCheck className="h-4 w-4 mr-2" /> Mark Received
+                    </Button>
+                </div>
+            </div>
+        )}
+      </div>
     </Card>
   );
 };
 
-const renderItems = (items: TradeItem[], money: number) => (
-  <div className="space-y-1">
-    {items && items.length > 0 ? items.map((item, idx) => (
-      <div key={idx} className="flex items-center gap-2">
-        <span className="truncate">{item.name}</span>
-        {item.is_foil && <Badge variant="outline" className="text-[10px] h-4 px-1">Foil</Badge>}
-      </div>
-    )) : null}
-    {money > 0 && <div className="font-bold text-green-500">+ ${money}</div>}
-    {(!items || items.length === 0) && money === 0 && <span className="text-muted-foreground italic">Nothing</span>}
-  </div>
-);
-
+// ... Dialog Components (NewTradeDialog) ...
+// Note: Keeping existing NewTradeDialog logic but ensuring imports match.
 const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
   const [step, setStep] = useState<'user' | 'build'>('user');
   const [searchQuery, setSearchQuery] = useState('');
@@ -208,7 +399,6 @@ const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
   const [selectedPartner, setSelectedPartner] = useState<any>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   
-  // Trade State
   const [myOffer, setMyOffer] = useState<TradeItem[]>([]);
   const [theirOffer, setTheirOffer] = useState<TradeItem[]>([]);
   const [myMoney, setMyMoney] = useState('');
@@ -216,7 +406,6 @@ const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
   const [activeCollection, setActiveCollection] = useState<any[]>([]);
   const [loadingCollection, setLoadingCollection] = useState(false);
 
-  // Improved Search Users
   useEffect(() => {
     if (!searchQuery || searchQuery.length < 2 || step !== 'user') {
       setUsers([]);
@@ -225,12 +414,7 @@ const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
     const delay = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        // Search by displayName prefix
         const usersRef = collection(db, "users");
-        // Using startAt/endAt for prefix search (requires name to be indexed)
-        // Note: For case-insensitive search in Firestore, you typically need a separate lowercase field.
-        // Falling back to client-side filter of recent users is safer without complex index setup.
-        
         const q = query(usersRef, limit(20)); 
         const snap = await getDocs(q);
         const results = snap.docs
@@ -248,7 +432,6 @@ const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
     return () => clearTimeout(delay);
   }, [searchQuery]);
 
-  // Load Collection Helper
   const loadCollection = async (userId: string) => {
     setLoadingCollection(true);
     try {
@@ -256,7 +439,6 @@ const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
       const snap = await getDocs(q);
       setActiveCollection(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (e) {
-        // Fallback if index missing
         const q2 = query(collection(db, "users", userId, "collection"), limit(50));
         const snap = await getDocs(q2);
         setActiveCollection(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -268,7 +450,7 @@ const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
   const handleSelectPartner = (partner: any) => {
     setSelectedPartner(partner);
     setStep('build');
-    loadCollection(currentUser.uid); // Default to showing my collection first
+    loadCollection(currentUser.uid);
   };
 
   const toggleCard = (card: any, isMyCollection: boolean) => {
@@ -311,7 +493,6 @@ const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
       });
       toast.success("Trade offer sent!");
       onOpenChange(false);
-      // Reset
       setStep('user');
       setMyOffer([]);
       setTheirOffer([]);
@@ -379,7 +560,7 @@ const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
                       className="border-none shadow-none focus-visible:ring-0" 
                     />
                   </div>
-                  <CardGrid cards={activeCollection} selected={myOffer} onToggle={(c) => toggleCard(c, true)} loading={loadingCollection} />
+                  <CardGrid cards={activeCollection} selected={myOffer} onToggle={(c: any) => toggleCard(c, true)} loading={loadingCollection} />
                 </TabsContent>
 
                 <TabsContent value="get" className="mt-0 space-y-4">
@@ -393,7 +574,7 @@ const NewTradeDialog = ({ open, onOpenChange, currentUser }: any) => {
                       className="border-none shadow-none focus-visible:ring-0" 
                     />
                   </div>
-                  <CardGrid cards={activeCollection} selected={theirOffer} onToggle={(c) => toggleCard(c, false)} loading={loadingCollection} />
+                  <CardGrid cards={activeCollection} selected={theirOffer} onToggle={(c: any) => toggleCard(c, false)} loading={loadingCollection} />
                 </TabsContent>
               </div>
             </Tabs>

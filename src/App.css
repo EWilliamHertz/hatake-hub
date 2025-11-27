@@ -66,3 +66,21 @@ html {
 body {
   overscroll-behavior-y: none; 
 }
+
+/* Fix for Radix UI / Shadcn Dialogs getting covered by backdrop */
+[data-state='open'] {
+  z-index: 1000 !important; /* Ensure dialog content is high */
+}
+
+/* Specific fix for overlay/backdrop */
+.fixed.inset-0.bg-black\/80 {
+  z-index: 999 !important; /* Ensure backdrop is lower than content */
+}
+
+/* If using standard Bootstrap-like modals */
+.modal-backdrop {
+    z-index: 1040 !important;
+}
+.modal-content {
+    z-index: 1050 !important;
+}
