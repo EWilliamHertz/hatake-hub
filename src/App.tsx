@@ -16,6 +16,7 @@ import Wishlist from "./pages/Wishlist";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import { BottomNav } from "./components/BottomNav";
+import Trades from "./pages/Trades"; // Import the new page
 
 const queryClient = new QueryClient();
 
@@ -39,6 +40,7 @@ const App = () => (
               <Route path="/profile/:userId" element={<Profile />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="*" element={<NotFound />} />
+              <Route path="/trades" element={<Trades />} />
             </Routes>
             <BottomNav />
           </div>
