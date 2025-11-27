@@ -8,7 +8,23 @@ export interface SearchScryDexParams {
   page?: number;
   limit?: number;
 }
+export interface CheckoutParams {
+  lineItems: Array<{
+    price: string;
+    quantity: number;
+  }>;
+  successUrl: string;
+  cancelUrl: string;
+}
 
+export const createStripeCheckout = async (params: CheckoutParams) => {
+  const checkoutFunction = httpsCallable<CheckoutParams, { url: string }>(
+    functions, 
+    'createStripeCheckout'
+  );
+  const result = await checkoutFunction(params);
+  return result.data;
+};
 export interface CardResult {
   id: string;
   api_id: string;

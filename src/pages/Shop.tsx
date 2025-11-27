@@ -2,14 +2,15 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { useNavigate } from "react-router-dom";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { createStripeCheckout } from "@/lib/firebase-functions"; // ✅ Uses your new helper
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ShoppingCart, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CartDialog } from "@/components/CartDialog";
-import { ProductModal } from "@/components/ProductModal"; // New Import
+import ProductModal from "@/components/ProductModal"; // ✅ FIXED: Default import (no braces)
 import { toast } from "sonner";
 
 interface Product {
@@ -46,7 +47,6 @@ const Shop = () => {
     }
 
     const productsRef = collection(db, 'products');
-    // Basic query, you can add where('stock', '>', 0) if you want to hide sold out items
     const q = query(productsRef);
     
     const unsubscribe = onSnapshot(
@@ -82,7 +82,7 @@ const Shop = () => {
   }, [user, navigate]);
 
   const handleQuickAdd = (e: React.MouseEvent, product: Product) => {
-    e.stopPropagation(); // Prevent opening the modal
+    e.stopPropagation(); 
     addToCart({
       productId: product.id,
       name: product.name,
@@ -92,7 +92,6 @@ const Shop = () => {
     toast.success(`${product.name} added to cart`);
   };
 
-  // Logic for the Cart Dialog "Checkout" button
   const handleCartCheckout = async () => {
     if (cartItems.length === 0) {
       toast.error('Your cart is empty');
@@ -100,12 +99,9 @@ const Shop = () => {
     }
 
     setCheckoutLoading(true);
-    setCartOpen(false);
 
     try {
-      // NOTE: You must implement this Cloud Function or use client-side logic looping 
-      // if you want to checkout multiple items at once.
-      // For now, I'm keeping your existing fetch call logic here:
+      // 1. Prepare line items
       const lineItems = cartItems.map(item => {
         const product = products.find(p => p.id === item.productId);
         if (!product?.stripePriceId) {
@@ -117,27 +113,23 @@ const Shop = () => {
         };
       });
 
-      const response = await fetch('https://us-central1-hatakesocial-88b5e.cloudfunctions.net/createStripeCheckout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lineItems,
-          successUrl: window.location.origin + '/shop?success=true',
-          cancelUrl: window.location.origin + '/shop?canceled=true',
-        }),
+      // 2. Call the Cloud Function via Firebase SDK (Secure & CORS-friendly)
+      const session = await createStripeCheckout({
+        lineItems,
+        successUrl: `${window.location.origin}/shop?success=true`,
+        cancelUrl: `${window.location.origin}/shop?canceled=true`,
       });
 
-      if (!response.ok) throw new Error('Failed to create checkout session');
-
-      const session = await response.json();
-      if (session.url) {
+      // 3. Redirect
+      if (session && session.url) {
         window.location.href = session.url;
       } else {
         throw new Error('No checkout URL received');
       }
-    } catch (error) {
+
+    } catch (error: any) {
       console.error('Checkout error:', error);
-      toast.error('Failed to start checkout');
+      toast.error(error.message || 'Failed to start checkout');
       setCheckoutLoading(false);
     }
   };
