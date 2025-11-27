@@ -52,7 +52,6 @@ interface MarketplaceListing {
   currency?: string;
 }
 
-
 const Marketplace = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -68,14 +67,10 @@ const Marketplace = () => {
   const [filterFoilOnly, setFilterFoilOnly] = useState<boolean>(false);
   const [minPrice, setMinPrice] = useState<string>("");
   const [maxPrice, setMaxPrice] = useState<string>("");
+  const [prefilledOffer, setPrefilledOffer] = useState<number | undefined>(undefined);
 
   useEffect(() => {
-    if (!user) {
-      navigate('/auth');
-      return;
-    }
-
-    // Listen to marketplace listings in real-time (Firestore collection: marketplaceListings)
+    // Listen to marketplace listings in real-time
     const marketplaceRef = collection(db, 'marketplaceListings');
     const q = query(marketplaceRef, orderBy('listedAt', 'desc'));
     
@@ -98,9 +93,25 @@ const Marketplace = () => {
     );
 
     return () => unsubscribe();
-  }, [user, navigate]);
+  }, []);
 
   const handleMakeOffer = (listing: MarketplaceListing) => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    setPrefilledOffer(undefined); // Let user type their price
+    setSelectedListing(listing);
+    setIsOfferDialogOpen(true);
+  };
+
+  const handleBuy = (listing: MarketplaceListing) => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    // "Buy" pre-fills the full price to expedite the process
+    setPrefilledOffer(listing.price);
     setSelectedListing(listing);
     setIsOfferDialogOpen(true);
   };
@@ -111,7 +122,6 @@ const Marketplace = () => {
     const rarityMatch = filterRarity === "all" || listing.cardData.rarity.toLowerCase() === filterRarity.toLowerCase();
     const conditionMatch = filterCondition === "all" || listing.condition.toLowerCase() === filterCondition.toLowerCase();
     const setMatch = filterSet === "all" || listing.cardData.set_name === filterSet;
-    // Fix foil filter to check all possible foil fields
     const isFoilCard = listing.isFoil || listing.is_foil || listing.foil || listing.cardData?.is_foil || listing.cardData?.foil || false;
     const foilMatch = !filterFoilOnly || isFoilCard;
     const price = listing.price;
@@ -247,7 +257,7 @@ const Marketplace = () => {
             <p className="text-muted-foreground">No listings match your filters</p>
           </Card>
         ) : (
-          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
             {filteredListings.map((listing) => (
               <Card key={listing.id} className="overflow-hidden">
                 {/* Card Preview */}
@@ -287,7 +297,9 @@ const Marketplace = () => {
                     <Button size="sm" variant="outline" className="w-full text-xs h-8" onClick={() => handleMakeOffer(listing)}>
                       Offer
                     </Button>
-                    <Button size="sm" className="w-full text-xs h-8">Buy</Button>
+                    <Button size="sm" className="w-full text-xs h-8" onClick={() => handleBuy(listing)}>
+                      Buy
+                    </Button>
                   </div>
 
                   <p className="text-[10px] text-muted-foreground text-center truncate">
@@ -308,6 +320,16 @@ const Marketplace = () => {
           sellerId={selectedListing.sellerId}
           cardName={selectedListing.cardData.name}
           listingPrice={selectedListing.price}
+          // Pass the whole card object properly formatted for the TradeItem interface
+          cardData={{
+            id: selectedListing.id,
+            name: selectedListing.cardData.name,
+            set_name: selectedListing.cardData.set_name,
+            image_uri: selectedListing.cardData.image_uris?.normal || selectedListing.cardData.image_uris?.small,
+            rarity: selectedListing.cardData.rarity,
+            is_foil: selectedListing.isFoil || selectedListing.is_foil || false
+          }}
+          prefilledPrice={prefilledOffer}
         />
       )}
     </div>

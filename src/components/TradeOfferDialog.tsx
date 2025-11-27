@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -16,13 +16,32 @@ interface TradeOfferDialogProps {
   sellerId: string;
   cardName: string;
   listingPrice: number;
+  cardData?: any; // The full card data for the trade record
+  prefilledPrice?: number;
 }
 
-export const TradeOfferDialog = ({ open, onOpenChange, listingId, sellerId, cardName, listingPrice }: TradeOfferDialogProps) => {
+export const TradeOfferDialog = ({ 
+  open, 
+  onOpenChange, 
+  listingId, 
+  sellerId, 
+  cardName, 
+  listingPrice,
+  cardData,
+  prefilledPrice
+}: TradeOfferDialogProps) => {
   const { user } = useAuth();
   const [offerPrice, setOfferPrice] = useState(listingPrice.toString());
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (prefilledPrice !== undefined) {
+      setOfferPrice(prefilledPrice.toString());
+    } else {
+      setOfferPrice(listingPrice.toString());
+    }
+  }, [prefilledPrice, listingPrice, open]);
 
   const handleSubmit = async () => {
     if (!user) {
@@ -38,21 +57,35 @@ export const TradeOfferDialog = ({ open, onOpenChange, listingId, sellerId, card
 
     setSubmitting(true);
     try {
-      await addDoc(collection(db, 'trade_offers'), {
-        listingId,
-        sellerId,
-        buyerId: user.uid,
-        buyerName: user.displayName || 'Anonymous',
-        cardName,
-        offerPrice: price,
-        message: message.trim(),
+      // Create a document in 'trades' to unify with the Trades page
+      await addDoc(collection(db, 'trades'), {
+        proposerId: user.uid,
+        proposerName: user.displayName || 'Anonymous',
+        receiverId: sellerId,
+        receiverName: 'Seller', // Ideally fetching this would be better, but 'Seller' works for now
+        participants: [user.uid, sellerId],
+        
+        // Structure for a "Buy" trade: 
+        // Proposer (Buyer) gives Money, gets Card
+        proposerItems: [],
+        proposerMoney: price,
+        
+        receiverItems: cardData ? [cardData] : [{
+          id: listingId,
+          name: cardName,
+          set_name: 'Marketplace Item'
+        }],
+        receiverMoney: 0,
+        
         status: 'pending',
-        timestamp: serverTimestamp()
+        marketListingId: listingId, // Link back to listing
+        message: message.trim(),
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
       });
 
-      toast.success('Offer sent!');
+      toast.success('Offer sent! Check your Trades tab.');
       onOpenChange(false);
-      setOfferPrice('');
       setMessage('');
     } catch (error) {
       console.error('Error sending offer:', error);
@@ -66,8 +99,12 @@ export const TradeOfferDialog = ({ open, onOpenChange, listingId, sellerId, card
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Make an Offer</DialogTitle>
-          <DialogDescription>Submit an offer for this card listing</DialogDescription>
+          <DialogTitle>{prefilledPrice ? 'Buy Item' : 'Make an Offer'}</DialogTitle>
+          <DialogDescription>
+            {prefilledPrice 
+              ? `Purchase ${cardName} for listed price` 
+              : `Submit an offer for ${cardName}`}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
@@ -105,7 +142,7 @@ export const TradeOfferDialog = ({ open, onOpenChange, listingId, sellerId, card
               Cancel
             </Button>
             <Button onClick={handleSubmit} disabled={submitting} className="flex-1">
-              {submitting ? 'Sending...' : 'Send Offer'}
+              {submitting ? 'Sending...' : (prefilledPrice ? 'Send Buy Request' : 'Send Offer')}
             </Button>
           </div>
         </div>
