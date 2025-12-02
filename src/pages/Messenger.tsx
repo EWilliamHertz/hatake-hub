@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -9,21 +9,20 @@ import {
   onSnapshot,
   addDoc,
   serverTimestamp,
-  DocumentData,
   doc,
-  getDoc,
   getDocs,
   updateDoc,
-  setDoc,
   limit,
-  Timestamp
+  startAfter,
+  QueryDocumentSnapshot,
+  DocumentData
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Search, ArrowLeft, Send, Loader2, User } from "lucide-react";
+import { Plus, Search, ArrowLeft, Send, Loader2, User, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -38,10 +37,6 @@ interface Conversation {
   lastMessage?: string;
   updatedAt?: any;
   participantInfo?: Record<string, ParticipantInfo>;
-  // Legacy support: messages might be stored in an array on the document itself
-  messages?: any[]; 
-  
-  // Computed for display
   otherUserId?: string;
   otherUserName?: string;
   otherUserPhotoURL?: string;
@@ -61,12 +56,15 @@ interface UserProfile {
   email: string;
 }
 
+const MESSAGES_PER_PAGE = 30;
+
 const Messenger = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isMobile = useIsMobile();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -77,6 +75,12 @@ const Messenger = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  
+  // Infinite scroll state
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [lastMessageDoc, setLastMessageDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Handle ?chat=userId
   useEffect(() => {
@@ -96,8 +100,6 @@ const Messenger = () => {
       return;
     }
 
-    // Note: Removed orderBy("updatedAt") from query to avoid index errors. 
-    // Sorting is done client-side.
     const q = query(
       collection(db, "conversations"), 
       where("participants", "array-contains", user.uid)
@@ -110,7 +112,6 @@ const Messenger = () => {
         const data = docSnap.data();
         const otherId = data.participants.find((p: string) => p !== user.uid);
         
-        // Use participantInfo from DB if available, otherwise fallback to defaults
         let otherName = "Unknown User";
         let otherPhoto = "";
 
@@ -124,7 +125,6 @@ const Messenger = () => {
           participants: data.participants || [],
           lastMessage: data.lastMessage || "",
           updatedAt: data.updatedAt,
-          messages: data.messages, // Keep legacy messages array
           participantInfo: data.participantInfo,
           otherUserId: otherId,
           otherUserName: otherName,
@@ -148,62 +148,99 @@ const Messenger = () => {
     return () => unsubscribe();
   }, [user, navigate]);
 
-  // Load Messages (Combines Legacy Array + New Subcollection)
+  // Load Messages from Subcollection (Real-time for new messages)
   useEffect(() => {
     if (!activeConversationId || !user) {
       setMessages([]);
+      setHasMoreMessages(true);
+      setLastMessageDoc(null);
+      setIsInitialLoad(true);
       return;
     }
 
-    // 1. Get legacy messages from the conversation document itself
-    const activeConv = conversations.find(c => c.id === activeConversationId);
-    let combinedMessages: Message[] = [];
+    // Reset state for new conversation
+    setMessages([]);
+    setHasMoreMessages(true);
+    setLastMessageDoc(null);
+    setIsInitialLoad(true);
 
-    if (activeConv && Array.isArray(activeConv.messages)) {
-      combinedMessages = activeConv.messages.map((m: any, idx: number) => ({
-        id: `legacy-${idx}`,
-        text: m.content || m.text || "",
-        senderId: m.senderId,
-        createdAt: m.timestamp // Firestore timestamp or string
-      }));
-    }
-
-    // 2. Listen for NEW messages in subcollection
+    // Real-time listener for messages subcollection (newest messages only)
     const q = query(
       collection(db, "conversations", activeConversationId, "messages"),
-      orderBy("createdAt", "asc")
+      orderBy("createdAt", "desc"),
+      limit(MESSAGES_PER_PAGE)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const newMessages = snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        text: doc.data().text || doc.data().content || "",
+        senderId: doc.data().senderId,
+        createdAt: doc.data().createdAt
       })) as Message[];
 
-      // Combine and sort
-      const finalMessages = [...combinedMessages, ...newMessages].sort((a, b) => {
-        const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt).getTime();
-        const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt).getTime();
-        return tA - tB;
-      });
-
-      setMessages(finalMessages);
+      // Reverse to show oldest first
+      setMessages(newMessages.reverse());
       
-      // Scroll to bottom
-      setTimeout(() => {
-        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
+      // Set cursor for pagination
+      if (snapshot.docs.length > 0) {
+        setLastMessageDoc(snapshot.docs[snapshot.docs.length - 1]);
+      }
+      setHasMoreMessages(snapshot.docs.length === MESSAGES_PER_PAGE);
+      
+      // Scroll to bottom on initial load
+      if (isInitialLoad) {
+        setTimeout(() => {
+          scrollRef.current?.scrollIntoView({ behavior: "auto" });
+          setIsInitialLoad(false);
+        }, 100);
+      }
     });
 
     return () => unsubscribe();
-  }, [activeConversationId, conversations]); // Re-run if conversations update (legacy messages might update)
+  }, [activeConversationId, user]);
+
+  // Load more messages (infinite scroll)
+  const loadMoreMessages = useCallback(async () => {
+    if (!activeConversationId || !lastMessageDoc || loadingMore || !hasMoreMessages) return;
+
+    setLoadingMore(true);
+    try {
+      const q = query(
+        collection(db, "conversations", activeConversationId, "messages"),
+        orderBy("createdAt", "desc"),
+        startAfter(lastMessageDoc),
+        limit(MESSAGES_PER_PAGE)
+      );
+
+      const snapshot = await getDocs(q);
+      const olderMessages = snapshot.docs.map(doc => ({
+        id: doc.id,
+        text: doc.data().text || doc.data().content || "",
+        senderId: doc.data().senderId,
+        createdAt: doc.data().createdAt
+      })) as Message[];
+
+      if (olderMessages.length > 0) {
+        // Prepend older messages (reversed to maintain chronological order)
+        setMessages(prev => [...olderMessages.reverse(), ...prev]);
+        setLastMessageDoc(snapshot.docs[snapshot.docs.length - 1]);
+      }
+      
+      setHasMoreMessages(snapshot.docs.length === MESSAGES_PER_PAGE);
+    } catch (error) {
+      console.error("Error loading more messages:", error);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [activeConversationId, lastMessageDoc, loadingMore, hasMoreMessages]);
 
   const loadUsers = async () => {
     if (!user) return;
     setLoadingUsers(true);
     try {
       const usersRef = collection(db, "users");
-      const q = query(usersRef, limit(50)); // Global search
+      const q = query(usersRef, limit(50));
       const snapshot = await getDocs(q);
       
       const userList: UserProfile[] = [];
@@ -224,7 +261,6 @@ const Messenger = () => {
   const startChat = async (otherUser: UserProfile) => {
     if (!user) return;
 
-    // Check local
     const existing = conversations.find(c => c.participants.includes(otherUser.uid));
     if (existing) {
       setActiveConversationId(existing.id);
@@ -233,7 +269,6 @@ const Messenger = () => {
     }
 
     try {
-      // Prepare participant info map for faster reads
       const participantInfo = {
         [user.uid]: {
           displayName: user.displayName || 'User',
@@ -251,8 +286,7 @@ const Messenger = () => {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         lastMessage: "",
-        isGroupChat: false,
-        messages: [] // Initialize empty legacy array to prevent errors if old code reads it
+        isGroupChat: false
       });
       
       setActiveConversationId(docRef.id);
@@ -268,27 +302,32 @@ const Messenger = () => {
     if (!user || !activeConversationId || !newMessage.trim()) return;
 
     const text = newMessage.trim();
-    setNewMessage(""); // Clear input immediately
+    setNewMessage("");
 
     try {
-      // 1. Add to subcollection (New way - Robust)
+      // Add to subcollection
       await addDoc(collection(db, "conversations", activeConversationId, "messages"), {
         text,
         senderId: user.uid,
         createdAt: serverTimestamp(),
       });
 
-      // 2. Update parent document summary
+      // Update parent document
       const conversationRef = doc(db, "conversations", activeConversationId);
       await updateDoc(conversationRef, {
         lastMessage: text,
         updatedAt: serverTimestamp()
       });
 
+      // Scroll to bottom
+      setTimeout(() => {
+        scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+
     } catch (error) {
       console.error("Error sending message:", error);
       toast.error("Failed to send");
-      setNewMessage(text); // Restore text on failure
+      setNewMessage(text);
     }
   };
 
@@ -317,7 +356,6 @@ const Messenger = () => {
     return u.displayName?.toLowerCase().includes(lower) || u.email?.toLowerCase().includes(lower);
   });
 
-  // Mobile Layout Toggles
   const showSidebar = !isMobile || (isMobile && !activeConversationId);
   const showChat = !isMobile || (isMobile && activeConversationId);
 
@@ -440,7 +478,30 @@ const Messenger = () => {
             </header>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div 
+              ref={messagesContainerRef}
+              className="flex-1 overflow-y-auto p-4 space-y-4"
+            >
+              {/* Load More Button */}
+              {hasMoreMessages && messages.length > 0 && (
+                <div className="flex justify-center">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={loadMoreMessages}
+                    disabled={loadingMore}
+                    className="text-muted-foreground"
+                  >
+                    {loadingMore ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <ChevronUp className="h-4 w-4 mr-2" />
+                    )}
+                    Load older messages
+                  </Button>
+                </div>
+              )}
+
               {messages.map((msg) => (
                 <div 
                   key={msg.id} 
