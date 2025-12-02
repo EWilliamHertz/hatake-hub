@@ -12,7 +12,7 @@ import { useNavSettings, NAV_ITEMS, NavItemId } from "@/hooks/useNavSettings";
 import { toast } from "sonner";
 
 const Settings = () => {
-  const { user, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const { isInstallable, install } = usePWAInstall();
   const { activeNavIds, saveNav } = useNavSettings();
@@ -95,7 +95,7 @@ const Settings = () => {
   };
 
   const handleLogout = async () => {
-    await logout();
+    await signOut();
     navigate('/auth');
   };
 

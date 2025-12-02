@@ -115,7 +115,7 @@ const Shop = () => {
 
       // 2. Call the Cloud Function via Firebase SDK (Secure & CORS-friendly)
       const session = await createCheckoutSession({
-        cartItems,
+        cartItems: lineItems,
         successUrl: `${window.location.origin}/shop?success=true`,
         cancelUrl: `${window.location.origin}/shop?canceled=true`,
       });
