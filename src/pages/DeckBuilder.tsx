@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { DeckStatsCharts } from "@/components/DeckStatsCharts";
 
 interface DeckCard {
   id: string;
@@ -507,41 +508,38 @@ const DeckBuilder = () => {
             )}
           </div>
 
-          {/* Deck Stats */}
-          <Card className="p-6 h-fit">
-            <h2 className="text-lg font-semibold mb-4">Deck Statistics</h2>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Format</span>
-                <span className="font-semibold">{deckFormat === "commander" ? "Commander" : "Eternal"}</span>
-              </div>
-              {deckFormat === "commander" && (
+          {/* Deck Stats with Charts */}
+          <div className="space-y-4 h-fit">
+            {/* Format Info Card */}
+            <Card className="p-4">
+              <h2 className="text-lg font-semibold mb-3">Deck Info</h2>
+              <div className="space-y-2 text-sm">
                 <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Commander</span>
-                  <span className="font-semibold">{commander ? "1" : "0"} / 1</span>
+                  <span className="text-muted-foreground">Format</span>
+                  <span className="font-semibold">{deckFormat === "commander" ? "Commander" : "Eternal"}</span>
                 </div>
-              )}
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Main Deck</span>
-                <span className={`font-semibold ${totalMainDeckCards === maxMainDeck ? 'text-green-500' : ''}`}>
-                  {totalMainDeckCards} / {maxMainDeck}
-                </span>
-              </div>
-              {deckFormat === "eternal" && (
+                {deckFormat === "commander" && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Commander</span>
+                    <span className="font-semibold">{commander ? "1" : "0"} / 1</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Sideboard</span>
-                  <span className={`font-semibold ${totalSideboardCards === maxSideboard ? 'text-green-500' : ''}`}>
-                    {totalSideboardCards} / {maxSideboard}
+                  <span className="text-muted-foreground">Main Deck</span>
+                  <span className={`font-semibold ${totalMainDeckCards === maxMainDeck ? 'text-green-500' : ''}`}>
+                    {totalMainDeckCards} / {maxMainDeck}
                   </span>
                 </div>
-              )}
-              <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Unique Cards</span>
-                <span className="font-semibold">{mainDeck.length + sideboard.length}</span>
-              </div>
-              <div className="pt-4 border-t border-border">
-                <div className="flex justify-between items-center">
-                  <span className="text-muted-foreground">Deck Complete</span>
+                {deckFormat === "eternal" && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Sideboard</span>
+                    <span className={`font-semibold ${totalSideboardCards === maxSideboard ? 'text-green-500' : ''}`}>
+                      {totalSideboardCards} / {maxSideboard}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center pt-2 border-t border-border mt-2">
+                  <span className="text-muted-foreground">Status</span>
                   <span className={`font-semibold ${
                     (deckFormat === "commander" && commander && totalMainDeckCards === 99) ||
                     (deckFormat === "eternal" && totalMainDeckCards === 60)
@@ -550,13 +548,16 @@ const DeckBuilder = () => {
                   }`}>
                     {(deckFormat === "commander" && commander && totalMainDeckCards === 99) ||
                      (deckFormat === "eternal" && totalMainDeckCards === 60)
-                      ? 'Yes'
-                      : 'No'}
+                      ? 'Complete'
+                      : 'Incomplete'}
                   </span>
                 </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+
+            {/* Visual Stats Charts */}
+            <DeckStatsCharts mainDeck={mainDeck} commander={commander} />
+          </div>
         </div>
       </div>
     </div>
