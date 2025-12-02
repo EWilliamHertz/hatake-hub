@@ -316,20 +316,10 @@ const Marketplace = () => {
         <TradeOfferDialog
           open={isOfferDialogOpen}
           onOpenChange={setIsOfferDialogOpen}
-          listingId={selectedListing.id}
-          sellerId={selectedListing.sellerId}
-          cardName={selectedListing.cardData.name}
-          listingPrice={selectedListing.price}
-          // Pass the whole card object properly formatted for the TradeItem interface
-          cardData={{
-            id: selectedListing.id,
-            name: selectedListing.cardData.name,
-            set_name: selectedListing.cardData.set_name,
-            image_uri: selectedListing.cardData.image_uris?.normal || selectedListing.cardData.image_uris?.small,
-            rarity: selectedListing.cardData.rarity,
-            is_foil: selectedListing.isFoil || selectedListing.is_foil || false
+          partner={{
+            uid: selectedListing.sellerId,
+            displayName: selectedListing.sellerData.displayName
           }}
-          prefilledPrice={prefilledOffer}
         />
       )}
     </div>

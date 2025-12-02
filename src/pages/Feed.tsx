@@ -35,7 +35,7 @@ interface Post {
 }
 
 const Feed = () => {
-  const { user, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,7 +87,7 @@ const Feed = () => {
   }, [user, navigate]);
 
   const handleLogout = async () => {
-    await logout();
+    await signOut();
     navigate('/auth');
   };
 
@@ -286,9 +286,6 @@ const Feed = () => {
       <CreatePostDialog 
         open={isCreatePostOpen} 
         onOpenChange={setIsCreatePostOpen}
-        onPostCreated={() => {
-            toast.success("Post created!");
-        }} 
       />
     </div>
   );
