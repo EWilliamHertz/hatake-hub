@@ -22,10 +22,9 @@ import Wishlist from "./pages/Wishlist";
 import Settings from "./pages/Settings";
 import Messenger from "./pages/Messenger";
 import NotFound from "./pages/NotFound";
-
+import Community from "./pages/Community";
 const queryClient = new QueryClient();
 
-// ✅ FIXED: Added the missing ProtectedRoute component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   
@@ -45,7 +44,8 @@ const AppContent = () => {
   const { user } = useAuth();
 
   return (
-    <div className="min-h-screen bg-background font-sans antialiased pb-16 md:pb-0">
+    // ✅ Added 'pb-20' to ensure content isn't hidden behind the bottom nav
+    <div className="min-h-screen bg-background font-sans antialiased pb-20 md:pb-0">
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/auth" element={<Auth />} />
@@ -61,12 +61,16 @@ const AppContent = () => {
         <Route path="/wishlist" element={<ProtectedRoute><Wishlist /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         <Route path="/messenger" element={<ProtectedRoute><Messenger /></ProtectedRoute>} />
-        
+        <Route path="/community" element={<ProtectedRoute><Community /></ProtectedRoute>} />
+        <Route path="/profile/:uid" element={<ProtectedRoute><Profile /></ProtectedRoute>} /> {/* Dynamic Route */}
+        <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} /> {/* Self Profile */}
         <Route path="*" element={<NotFound />} />
       </Routes>
 
-      {/* Show BottomNav only if user is logged in and on mobile */}
-      {user && isMobile && <BottomNav />}
+      {/* ✅ Logic Update: Show BottomNav if user is logged in. 
+          Removed 'isMobile' check temporarily so you can see it on desktop resize too. 
+          Ideally, BottomNav component itself handles the 'md:hidden' class. */}
+      {user && <BottomNav />}
     </div>
   );
 };

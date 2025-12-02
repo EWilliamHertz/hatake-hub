@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom"; // ✅ Added Link to imports
 import { collection, query, orderBy, limit, onSnapshot, Timestamp, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
@@ -35,7 +35,7 @@ interface Post {
 }
 
 const Feed = () => {
-  const { user, logout } = useAuth(); // Use 'logout' from context instead of 'signOut' based on your Context file
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,12 +113,11 @@ const Feed = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-24"> {/* Increased padding-bottom for bottom nav */}
+    <div className="min-h-screen bg-background pb-24">
       
       {/* Header with Avatar Menu */}
       <header className="sticky top-0 z-40 bg-card border-b border-border px-4 py-3 flex justify-between items-center shadow-sm backdrop-blur-md bg-opacity-90">
         <div className="flex items-center gap-3">
-            {/* Enlarged Logo */}
             <img src={logo} alt="Hatake logo" className="h-10 w-10 rounded-full border border-primary/20 shadow-sm" />
             <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent tracking-tight">
               HatakeSocial
@@ -126,7 +125,6 @@ const Feed = () => {
         </div>
 
         <div className="flex items-center gap-3">
-            {/* Avatar Dropdown Menu */}
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Avatar className="h-9 w-9 cursor-pointer border-2 border-transparent hover:border-primary transition-all">
@@ -194,12 +192,15 @@ const Feed = () => {
                     </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm truncate">{post.author}</h3>
-                    <p className="text-xs text-muted-foreground">
-                        {post.timestamp instanceof Timestamp 
-                        ? post.timestamp.toDate().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                        : new Date(post.timestamp).toLocaleDateString()}
-                    </p>
+                      {/* ✅ Correctly implemented Link */}
+                      <Link to={`/profile/${post.authorId}`} className="font-semibold text-sm truncate hover:underline block">
+                        {post.author}
+                      </Link>
+                      <p className="text-xs text-muted-foreground">
+                          {post.timestamp instanceof Timestamp 
+                          ? post.timestamp.toDate().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : new Date(post.timestamp).toLocaleDateString()}
+                      </p>
                     </div>
                 </div>
 
@@ -286,7 +287,6 @@ const Feed = () => {
         open={isCreatePostOpen} 
         onOpenChange={setIsCreatePostOpen}
         onPostCreated={() => {
-            // Optional: Scroll to top or refresh list logic if not real-time
             toast.success("Post created!");
         }} 
       />
