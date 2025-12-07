@@ -47,6 +47,8 @@ interface UserCard {
   prices?: {
     usd?: number | null;
     usd_foil?: number | null;
+    eur?: number | null;
+    eur_foil?: number | null;
   };
 }
 
@@ -296,15 +298,23 @@ const Collection = () => {
 
   const calculateTotalValue = () => {
     return userCards.reduce((total, card) => {
-      const usdPrice = card.is_foil ? card.prices?.usd_foil ?? null : card.prices?.usd ?? null;
-      const converted = convertPrice(usdPrice);
-      const cardValue = (converted || 0) * (card.quantity || 1);
-      return total + cardValue;
+      // Use native EUR prices when EUR is selected, otherwise convert from USD
+      if (currency === 'EUR') {
+        const eurPrice = card.is_foil ? card.prices?.eur_foil ?? null : card.prices?.eur ?? null;
+        const cardValue = (eurPrice || 0) * (card.quantity || 1);
+        return total + cardValue;
+      } else {
+        const usdPrice = card.is_foil ? card.prices?.usd_foil ?? null : card.prices?.usd ?? null;
+        const converted = convertPrice(usdPrice);
+        const cardValue = (converted || 0) * (card.quantity || 1);
+        return total + cardValue;
+      }
     }, 0);
   };
 
   const totalValue = calculateTotalValue();
-  const convertedValue = convertPrice(totalValue);
+  // For EUR, totalValue is already in EUR; for other currencies, it's converted
+  const convertedValue = currency === 'EUR' ? totalValue : convertPrice(totalValue);
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -479,16 +489,24 @@ const Collection = () => {
                                 </div>
                                 {card.prices && (
                                   <div className="mt-2 space-y-1">
-                                    {card.prices.usd && (
+                                    {(card.prices.usd || card.prices.eur) && (
                                       <div className="flex justify-between text-xs">
                                         <span className="text-muted-foreground">Regular:</span>
-                                        <span className="font-semibold">${card.prices.usd.toFixed(2)}</span>
+                                        <span className="font-semibold">
+                                          {card.prices.eur ? `€${card.prices.eur.toFixed(2)}` : ''} 
+                                          {card.prices.eur && card.prices.usd ? ' / ' : ''}
+                                          {card.prices.usd ? `$${card.prices.usd.toFixed(2)}` : ''}
+                                        </span>
                                       </div>
                                     )}
-                                    {card.prices.usd_foil && (
+                                    {(card.prices.usd_foil || card.prices.eur_foil) && (
                                       <div className="flex justify-between text-xs">
                                         <span className="text-muted-foreground">Foil:</span>
-                                        <span className="font-semibold text-primary">${card.prices.usd_foil.toFixed(2)}</span>
+                                        <span className="font-semibold text-primary">
+                                          {card.prices.eur_foil ? `€${card.prices.eur_foil.toFixed(2)}` : ''} 
+                                          {card.prices.eur_foil && card.prices.usd_foil ? ' / ' : ''}
+                                          {card.prices.usd_foil ? `$${card.prices.usd_foil.toFixed(2)}` : ''}
+                                        </span>
                                       </div>
                                     )}
                                   </div>
@@ -733,6 +751,7 @@ const Collection = () => {
                       price={convertPrice(
                         card.is_foil ? card.prices?.usd_foil ?? null : card.prices?.usd ?? null
                       )}
+                      priceEur={card.is_foil ? card.prices?.eur_foil ?? null : card.prices?.eur ?? null}
                       currency={currency}
                     />
                   </div>
@@ -784,11 +803,18 @@ const Collection = () => {
                       )}
                     </div>
                     <div className="flex items-center gap-4">
-                      {convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd) && (
-                        <span className="text-sm font-bold text-primary">
-                          {formatPrice(convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd) as number)}
-                        </span>
-                      )}
+                      {currency === 'EUR' 
+                        ? (card.is_foil ? card.prices?.eur_foil : card.prices?.eur) && (
+                            <span className="text-sm font-bold text-primary">
+                              €{(card.is_foil ? card.prices?.eur_foil : card.prices?.eur)?.toFixed(2)}
+                            </span>
+                          )
+                        : convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd) && (
+                            <span className="text-sm font-bold text-primary">
+                              {formatPrice(convertPrice(card.is_foil ? card.prices?.usd_foil : card.prices?.usd) as number)}
+                            </span>
+                          )
+                      }
                       <span className="text-sm text-muted-foreground">x{card.quantity || 1}</span>
                     </div>
                   </div>

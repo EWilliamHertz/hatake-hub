@@ -10,6 +10,7 @@ interface TradingCardProps {
   imageUrl?: string;
   isFoil?: boolean;
   price?: number | null;
+  priceEur?: number | null;
   currency?: Currency;
   className?: string;
 }
@@ -21,9 +22,12 @@ export const TradingCard = ({
   imageUrl,
   isFoil = false,
   price,
+  priceEur,
   currency = 'USD',
   className,
 }: TradingCardProps) => {
+  // Use native EUR price from Scryfall when EUR is selected
+  const displayPrice = currency === 'EUR' && priceEur != null ? priceEur : price;
   return (
     <Card
       className={cn(
@@ -71,7 +75,7 @@ export const TradingCard = ({
             {rarity || 'Common'}
           </span>
         </div>
-        {price !== undefined && price !== null && (
+        {displayPrice !== undefined && displayPrice !== null && (
           <div className="text-sm font-semibold text-primary">
             {currency === 'USD'
               ? '$'
@@ -80,7 +84,7 @@ export const TradingCard = ({
               : currency === 'DKK' || currency === 'SEK'
               ? 'kr'
               : '$'}
-            {price.toFixed(2)}
+            {displayPrice.toFixed(2)}
           </div>
         )}
       </div>

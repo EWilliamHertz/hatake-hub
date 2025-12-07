@@ -32,6 +32,8 @@ interface MarketplaceListing {
     prices?: {
       usd?: number | null;
       usd_foil?: number | null;
+      eur?: number | null;
+      eur_foil?: number | null;
     };
     is_foil?: boolean;
     foil?: boolean;
@@ -42,6 +44,7 @@ interface MarketplaceListing {
     country: string;
   };
   price: number;
+  priceEur?: number;
   condition: string;
   isFoil?: boolean;
   is_foil?: boolean;
