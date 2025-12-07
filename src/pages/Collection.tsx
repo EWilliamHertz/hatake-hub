@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { collection, query, where, onSnapshot, writeBatch, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { TradingCard } from "@/components/TradingCard";
+import { VirtualizedCardGrid } from "@/components/VirtualizedCardGrid";
 import { CardSearchBar } from "@/components/CardSearchBar";
 import { CardEditModal } from "@/components/CardEditModal";
 import { BulkEditModal } from "@/components/BulkEditModal";
@@ -698,65 +699,27 @@ const Collection = () => {
         ) : (
           <div>
             {viewMode === "grid" ? (
-              <div 
-                className="grid gap-4"
-                style={{
-                  gridTemplateColumns: `repeat(auto-fill, minmax(${cardSize}px, 1fr))`
+              <VirtualizedCardGrid
+                cards={filteredCards}
+                cardSize={cardSize}
+                currency={currency}
+                convertPrice={convertPrice}
+                selectionMode={selectionMode}
+                selectedCardIds={selectedCardIds}
+                onCardClick={(card) => {
+                  setSelectedCard(card);
+                  setIsCardDetailOpen(true);
                 }}
-              >
-                {filteredCards.map((card) => (
-                  <div 
-                    key={card.id} 
-                    className="relative cursor-pointer" 
-                    onClick={(e) => {
-                      if (selectionMode) {
-                        e.stopPropagation();
-                        const newSelected = new Set(selectedCardIds);
-                        if (newSelected.has(card.id)) {
-                          newSelected.delete(card.id);
-                        } else {
-                          newSelected.add(card.id);
-                        }
-                        setSelectedCardIds(newSelected);
-                      } else {
-                        setSelectedCard(card);
-                        setIsCardDetailOpen(true);
-                      }
-                    }}
-                  >
-                    {selectionMode && (
-                      <div className="absolute top-2 left-2 z-10">
-                        <Checkbox
-                          checked={selectedCardIds.has(card.id)}
-                          onCheckedChange={(checked) => {
-                            const newSelected = new Set(selectedCardIds);
-                            if (checked) {
-                              newSelected.add(card.id);
-                            } else {
-                              newSelected.delete(card.id);
-                            }
-                            setSelectedCardIds(newSelected);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </div>
-                    )}
-                    <TradingCard
-                      id={card.id}
-                      name={card.name}
-                      set={card.set_name}
-                      rarity={card.rarity}
-                      imageUrl={card.image_uris?.normal || card.image_uris?.small}
-                      isFoil={card.is_foil}
-                      price={convertPrice(
-                        card.is_foil ? card.prices?.usd_foil ?? null : card.prices?.usd ?? null
-                      )}
-                      priceEur={card.is_foil ? card.prices?.eur_foil ?? null : card.prices?.eur ?? null}
-                      currency={currency}
-                    />
-                  </div>
-                ))}
-              </div>
+                onCardSelect={(cardId, selected) => {
+                  const newSelected = new Set(selectedCardIds);
+                  if (selected) {
+                    newSelected.add(cardId);
+                  } else {
+                    newSelected.delete(cardId);
+                  }
+                  setSelectedCardIds(newSelected);
+                }}
+              />
             ) : (
               filteredCards.map((card) => (
                 <Card 
