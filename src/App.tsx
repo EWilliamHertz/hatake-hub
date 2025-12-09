@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { CartProvider } from "@/contexts/CartContext";
 import Layout from "@/components/Layout";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 
 // Pages
 import Index from "./pages/Index";
@@ -91,6 +92,7 @@ const App = () => (
         <AuthProvider>
           <CartProvider>
             <AppContent />
+            <PWAInstallPrompt />
             <Toaster />
             <Sonner />
           </CartProvider>
