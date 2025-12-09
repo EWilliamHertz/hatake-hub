@@ -23,6 +23,7 @@ import Settings from "./pages/Settings";
 import Messenger from "./pages/Messenger";
 import NotFound from "./pages/NotFound";
 import Community from "./pages/Community";
+import Notifications from "./pages/Notifications";
 
 const queryClient = new QueryClient();
 
@@ -77,6 +78,7 @@ const AppContent = () => {
           <Route path="/settings" element={<Settings />} />
           <Route path="/messenger" element={<Messenger />} />
           <Route path="/community" element={<Community />} />
+          <Route path="/notifications" element={<Notifications />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

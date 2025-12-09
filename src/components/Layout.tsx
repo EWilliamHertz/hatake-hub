@@ -77,9 +77,9 @@ const SidebarNav = () => {
         {/* Logo/Brand */}
         <div className="p-4 flex items-center gap-3 border-b border-border">
           <img 
-            src="/hatake-logo.png" 
+            src="https://i.imgur.com/B06rBhI.png" 
             alt="Hatake" 
-            className="h-8 w-8"
+            className="h-10 w-10 object-contain"
           />
           {!collapsed && (
             <span className="font-bold text-lg text-primary">HatakeSocial</span>
