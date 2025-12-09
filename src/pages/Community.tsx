@@ -25,58 +25,17 @@ interface LocalGameStore {
   members: number;
   description: string;
   nextEvent?: string;
+  createdBy?: string;
 }
-
-// Mock LGS data
-const mockGroups: LocalGameStore[] = [
-  {
-    id: "1",
-    name: "Hatake Official",
-    location: "Online",
-    members: 1247,
-    description: "The official Hatake community group for all TCG enthusiasts.",
-    nextEvent: "Weekly Draft Night - Friday 7PM"
-  },
-  {
-    id: "2",
-    name: "Copenhagen Card Club",
-    location: "Copenhagen, Denmark",
-    members: 89,
-    description: "Local MTG & Pokémon players in Copenhagen. Weekly meetups!",
-    nextEvent: "Modern Monday - Dec 4th"
-  },
-  {
-    id: "3",
-    name: "Nordic TCG Alliance",
-    location: "Scandinavia",
-    members: 312,
-    description: "Cross-country TCG community for Nordic players.",
-    nextEvent: "Regional Championship Prep"
-  },
-  {
-    id: "4",
-    name: "Dragon's Lair Gaming",
-    location: "Stockholm, Sweden",
-    members: 156,
-    description: "Your friendly local game store community.",
-    nextEvent: "Pokémon League Cup - Dec 10th"
-  },
-  {
-    id: "5",
-    name: "The Gathering Place",
-    location: "Oslo, Norway",
-    members: 78,
-    description: "Casual and competitive Magic players welcome!",
-    nextEvent: "Commander Night - Every Wednesday"
-  }
-];
 
 const Community = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [groups, setGroups] = useState<LocalGameStore[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [groupsLoading, setGroupsLoading] = useState(true);
   const [hasSearched, setHasSearched] = useState(false);
 
   useEffect(() => {
@@ -84,6 +43,27 @@ const Community = () => {
       navigate('/auth');
     }
   }, [user, navigate]);
+
+  // Fetch groups from Firebase
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const groupsRef = collection(db, "groups");
+        const snapshot = await getDocs(groupsRef);
+        const groupList: LocalGameStore[] = [];
+        snapshot.forEach(doc => {
+          groupList.push({ id: doc.id, ...doc.data() } as LocalGameStore);
+        });
+        setGroups(groupList);
+      } catch (error) {
+        console.error("Failed to fetch groups:", error);
+        toast.error("Failed to load groups");
+      } finally {
+        setGroupsLoading(false);
+      }
+    };
+    fetchGroups();
+  }, []);
 
   const searchUsers = async () => {
     if (!user) return;
@@ -212,42 +192,56 @@ const Community = () => {
 
         {/* Groups Tab */}
         <TabsContent value="groups" className="space-y-4">
-          {mockGroups.map(group => (
-            <Card key={group.id} className="overflow-hidden">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg">{group.name}</CardTitle>
-                    <CardDescription className="flex items-center gap-1 mt-1">
-                      <MapPin className="h-3 w-3" />
-                      {group.location}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <Users className="h-4 w-4" />
-                    {group.members.toLocaleString()}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">{group.description}</p>
-                {group.nextEvent && (
-                  <div className="flex items-center gap-2 text-sm bg-muted/50 rounded-lg px-3 py-2">
-                    <Calendar className="h-4 w-4 text-primary" />
-                    <span>{group.nextEvent}</span>
-                  </div>
-                )}
-                <div className="flex gap-2 pt-2">
-                  <Button className="flex-1" variant="default">
-                    Join Group
-                  </Button>
-                  <Button variant="outline">
-                    View
-                  </Button>
-                </div>
-              </CardContent>
+          {groupsLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : groups.length === 0 ? (
+            <Card className="text-center p-8 border-dashed">
+              <Users className="h-12 w-12 mx-auto mb-2 text-muted-foreground opacity-50"/>
+              <h3 className="font-semibold">No Groups Yet</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Be the first to create a community group!
+              </p>
             </Card>
-          ))}
+          ) : (
+            groups.map(group => (
+              <Card key={group.id} className="overflow-hidden">
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-lg">{group.name}</CardTitle>
+                      <CardDescription className="flex items-center gap-1 mt-1">
+                        <MapPin className="h-3 w-3" />
+                        {group.location}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Users className="h-4 w-4" />
+                      {(group.members || 0).toLocaleString()}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-muted-foreground">{group.description}</p>
+                  {group.nextEvent && (
+                    <div className="flex items-center gap-2 text-sm bg-muted/50 rounded-lg px-3 py-2">
+                      <Calendar className="h-4 w-4 text-primary" />
+                      <span>{group.nextEvent}</span>
+                    </div>
+                  )}
+                  <div className="flex gap-2 pt-2">
+                    <Button className="flex-1" variant="default">
+                      Join Group
+                    </Button>
+                    <Button variant="outline">
+                      View
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
         </TabsContent>
       </Tabs>
     </div>
