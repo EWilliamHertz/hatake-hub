@@ -35,9 +35,9 @@ export const NotificationBell = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !user.displayName) return;
 
-    const notificationsRef = collection(db, 'users', user.uid, 'notifications');
+    const notificationsRef = collection(db, 'users', user.displayName, 'notifications');
     const q = query(notificationsRef, orderBy('createdAt', 'desc'), limit(20));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -72,8 +72,8 @@ export const NotificationBell = () => {
     if (!user) return;
 
     // Mark as read
-    if (!notification.read) {
-      const notifRef = doc(db, 'users', user.uid, 'notifications', notification.id);
+    if (!notification.read && user?.displayName) {
+      const notifRef = doc(db, 'users', user.displayName, 'notifications', notification.id);
       await updateDoc(notifRef, { read: true });
     }
 
@@ -89,7 +89,7 @@ export const NotificationBell = () => {
 
     const unreadNotifs = notifications.filter(n => !n.read);
     for (const notif of unreadNotifs) {
-      const notifRef = doc(db, 'users', user.uid, 'notifications', notif.id);
+      const notifRef = doc(db, 'users', user.displayName!, 'notifications', notif.id);
       await updateDoc(notifRef, { read: true });
     }
   };

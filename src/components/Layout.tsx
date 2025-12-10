@@ -57,9 +57,9 @@ const SidebarNav = () => {
 
   // Listen for unread notifications
   useEffect(() => {
-    if (!user) return;
+    if (!user || !user.displayName) return;
     
-    const notificationsRef = collection(db, 'users', user.uid, 'notifications');
+    const notificationsRef = collection(db, 'users', user.displayName, 'notifications');
     const q = query(notificationsRef, where('read', '==', false));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
