@@ -21,7 +21,7 @@ export const createNotification = async (params: CreateNotificationParams) => {
   const { userId, ...notificationData } = params;
   
   try {
-    // Note: userId should be the user's displayName/nickname, not uid
+    // Note: userId should be the user's uid
     const notificationsRef = collection(db, 'users', userId, 'notifications');
     await addDoc(notificationsRef, {
       ...notificationData,
