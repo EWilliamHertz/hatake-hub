@@ -42,9 +42,9 @@ const Notifications = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user || !user.displayName) return;
+    if (!user) return;
 
-    const notificationsRef = collection(db, 'users', user.displayName, 'notifications');
+    const notificationsRef = collection(db, 'users', user.uid, 'notifications');
     const q = query(notificationsRef, orderBy('createdAt', 'desc'), limit(50));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -63,8 +63,8 @@ const Notifications = () => {
     if (!user) return;
 
     // Mark as read
-    if (!notification.read && user?.displayName) {
-      const notifRef = doc(db, 'users', user.displayName, 'notifications', notification.id);
+    if (!notification.read) {
+      const notifRef = doc(db, 'users', user.uid, 'notifications', notification.id);
       await updateDoc(notifRef, { read: true });
     }
 
@@ -80,7 +80,7 @@ const Notifications = () => {
     const unreadNotifs = notifications.filter(n => !n.read);
     await Promise.all(
       unreadNotifs.map(n => {
-        const notifRef = doc(db, 'users', user.displayName!, 'notifications', n.id);
+        const notifRef = doc(db, 'users', user.uid, 'notifications', n.id);
         return updateDoc(notifRef, { read: true });
       })
     );
