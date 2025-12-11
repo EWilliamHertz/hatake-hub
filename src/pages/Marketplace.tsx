@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,39 +19,25 @@ import {
 
 interface MarketplaceListing {
   id: string;
-  cardData: {
+  card_id: string;
+  seller_id: string;
+  price: number;
+  quantity: number;
+  condition: string;
+  notes: string;
+  is_foil: boolean;
+  created_at: string;
+  card?: {
     name: string;
     set_name: string;
     rarity: string;
-    image_uris?: {
-      small: string;
-      normal: string;
-      large: string;
-    };
-    prices?: {
-      usd?: number | null;
-      usd_foil?: number | null;
-      eur?: number | null;
-      eur_foil?: number | null;
-    };
-    is_foil?: boolean;
-    foil?: boolean;
+    image_normal: string;
+    image_small: string;
+    game: string;
   };
-  sellerId: string;
-  sellerData: {
-    displayName: string;
-    country: string;
+  seller?: {
+    display_name: string;
   };
-  price: number;
-  priceEur?: number;
-  condition: string;
-  isFoil?: boolean;
-  is_foil?: boolean;
-  foil?: boolean;
-  sale_quantity?: number;
-  quantity?: number;
-  game?: string;
-  currency?: string;
 }
 
 const Marketplace = () => {
@@ -70,32 +55,45 @@ const Marketplace = () => {
   const [filterFoilOnly, setFilterFoilOnly] = useState<boolean>(false);
   const [minPrice, setMinPrice] = useState<string>("");
   const [maxPrice, setMaxPrice] = useState<string>("");
-  const [prefilledOffer, setPrefilledOffer] = useState<number | undefined>(undefined);
 
   useEffect(() => {
-    // Listen to marketplace listings in real-time
-    const marketplaceRef = collection(db, 'marketplaceListings');
-    const q = query(marketplaceRef, orderBy('listedAt', 'desc'));
-    
-    const unsubscribe = onSnapshot(
-      q, 
-      (snapshot) => {
-        const listingsData: MarketplaceListing[] = [];
-        snapshot.forEach((doc) => {
-          listingsData.push({ id: doc.id, ...doc.data() } as MarketplaceListing);
-        });
-        setListings(listingsData);
-        setLoading(false);
-        setError(null);
-      },
-      (err) => {
-        console.error('Marketplace error:', err);
-        setError(err.message);
-        setLoading(false);
-      }
-    );
+    const fetchListings = async () => {
+      // Fetch listings
+      const { data: listingsData, error: listingsError } = await supabase
+        .from('marketplace_listings')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    return () => unsubscribe();
+      if (listingsError) {
+        console.error('Marketplace error:', listingsError);
+        setError(listingsError.message);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch related cards and sellers
+      const cardIds = [...new Set((listingsData || []).map(l => l.card_id))];
+      const sellerIds = [...new Set((listingsData || []).map(l => l.seller_id))];
+
+      const [cardsRes, sellersRes] = await Promise.all([
+        cardIds.length > 0 ? supabase.from('collection_cards').select('id, name, set_name, rarity, image_normal, image_small, game').in('id', cardIds) : { data: [] },
+        sellerIds.length > 0 ? supabase.from('profiles').select('id, display_name').in('id', sellerIds) : { data: [] }
+      ]);
+
+      const cardsMap = new Map((cardsRes.data || []).map(c => [c.id, c]));
+      const sellersMap = new Map((sellersRes.data || []).map(s => [s.id, s]));
+
+      const enrichedListings = (listingsData || []).map(listing => ({
+        ...listing,
+        card: cardsMap.get(listing.card_id),
+        seller: sellersMap.get(listing.seller_id)
+      }));
+
+      setListings(enrichedListings as MarketplaceListing[]);
+      setLoading(false);
+    };
+
+    fetchListings();
   }, []);
 
   const handleMakeOffer = (listing: MarketplaceListing) => {
@@ -103,7 +101,6 @@ const Marketplace = () => {
       navigate('/auth');
       return;
     }
-    setPrefilledOffer(undefined); // Let user type their price
     setSelectedListing(listing);
     setIsOfferDialogOpen(true);
   };
@@ -113,20 +110,16 @@ const Marketplace = () => {
       navigate('/auth');
       return;
     }
-    // "Buy" pre-fills the full price to expedite the process
-    setPrefilledOffer(listing.price);
     setSelectedListing(listing);
     setIsOfferDialogOpen(true);
   };
 
   const filteredListings = listings.filter((listing) => {
-    const gameValue = (listing.game || (listing.cardData as any).game || "").toLowerCase();
-    const gameMatch = filterGame === "all" || gameValue === filterGame.toLowerCase();
-    const rarityMatch = filterRarity === "all" || listing.cardData.rarity.toLowerCase() === filterRarity.toLowerCase();
-    const conditionMatch = filterCondition === "all" || listing.condition.toLowerCase() === filterCondition.toLowerCase();
-    const setMatch = filterSet === "all" || listing.cardData.set_name === filterSet;
-    const isFoilCard = listing.isFoil || listing.is_foil || listing.foil || listing.cardData?.is_foil || listing.cardData?.foil || false;
-    const foilMatch = !filterFoilOnly || isFoilCard;
+    const gameMatch = filterGame === "all" || listing.card?.game?.toLowerCase() === filterGame.toLowerCase();
+    const rarityMatch = filterRarity === "all" || listing.card?.rarity?.toLowerCase() === filterRarity.toLowerCase();
+    const conditionMatch = filterCondition === "all" || listing.condition?.toLowerCase() === filterCondition.toLowerCase();
+    const setMatch = filterSet === "all" || listing.card?.set_name === filterSet;
+    const foilMatch = !filterFoilOnly || listing.is_foil;
     const price = listing.price;
     const min = minPrice ? parseFloat(minPrice) : null;
     const max = maxPrice ? parseFloat(maxPrice) : null;
@@ -135,10 +128,10 @@ const Marketplace = () => {
     return gameMatch && rarityMatch && conditionMatch && setMatch && foilMatch && minMatch && maxMatch;
   });
 
-  const availableSets = Array.from(new Set(listings.map(l => l.cardData.set_name).filter(Boolean)));
+  const availableSets = Array.from(new Set(listings.map(l => l.card?.set_name).filter(Boolean)));
 
   const totalListings = filteredListings.length;
-  const totalValue = filteredListings.reduce((sum, l) => sum + (l.price || 0) * (l.sale_quantity || l.quantity || 1), 0);
+  const totalValue = filteredListings.reduce((sum, l) => sum + (l.price || 0) * (l.quantity || 1), 0);
   const averagePrice = totalListings > 0 ? totalValue / totalListings : 0;
 
   return (
@@ -206,7 +199,7 @@ const Marketplace = () => {
                 <SelectContent>
                   <SelectItem value="all">All Sets</SelectItem>
                   {availableSets.map(set => (
-                    <SelectItem key={set} value={set}>{set}</SelectItem>
+                    <SelectItem key={set} value={set!}>{set}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -268,15 +261,15 @@ const Marketplace = () => {
                   <div className="relative">
                     <TradingCard
                       id={listing.id}
-                      name={listing.cardData.name}
-                      set={listing.cardData.set_name}
-                      rarity={listing.cardData.rarity}
-                      imageUrl={listing.cardData.image_uris?.normal || listing.cardData.image_uris?.small}
-                      isFoil={listing.isFoil || listing.is_foil || listing.foil || listing.cardData?.is_foil || listing.cardData?.foil || false}
+                      name={listing.card?.name || 'Unknown'}
+                      set={listing.card?.set_name || ''}
+                      rarity={listing.card?.rarity || ''}
+                      imageUrl={listing.card?.image_normal || listing.card?.image_small}
+                      isFoil={listing.is_foil}
                     />
-                    {(listing.sale_quantity || listing.quantity) && (listing.sale_quantity || listing.quantity)! > 1 && (
+                    {listing.quantity > 1 && (
                       <Badge className="absolute top-1 right-1 text-xs">
-                        x{listing.sale_quantity || listing.quantity}
+                        x{listing.quantity}
                       </Badge>
                     )}
                   </div>
@@ -288,7 +281,7 @@ const Marketplace = () => {
                     <div className="text-lg font-bold text-primary">
                       ${listing.price.toFixed(2)}
                     </div>
-                    {(listing.isFoil || listing.is_foil || listing.foil || listing.cardData?.foil) && (
+                    {listing.is_foil && (
                       <Badge variant="secondary" className="text-xs">Foil</Badge>
                     )}
                   </div>
@@ -306,7 +299,7 @@ const Marketplace = () => {
                   </div>
 
                   <p className="text-[10px] text-muted-foreground text-center truncate">
-                    {listing.sellerData.displayName}
+                    {listing.seller?.display_name || 'Unknown Seller'}
                   </p>
                 </div>
               </Card>
@@ -320,8 +313,8 @@ const Marketplace = () => {
           open={isOfferDialogOpen}
           onOpenChange={setIsOfferDialogOpen}
           partner={{
-            uid: selectedListing.sellerId,
-            displayName: selectedListing.sellerData.displayName
+            uid: selectedListing.seller_id,
+            displayName: selectedListing.seller?.display_name || 'Unknown'
           }}
         />
       )}

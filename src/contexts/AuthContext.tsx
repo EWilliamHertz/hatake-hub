@@ -1,19 +1,17 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { 
-  User, 
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  onAuthStateChanged,
-  GoogleAuthProvider,
-  signInWithPopup,
-  updateProfile,
-} from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { User as SupabaseUser, Session } from '@supabase/supabase-js';
+import { supabase } from '@/integrations/supabase/client';
+
+// Extended user type with Firebase-compatible properties
+interface User extends SupabaseUser {
+  uid: string;
+  displayName: string | null;
+  photoURL: string | null;
+}
 
 interface AuthContextType {
   user: User | null;
+  session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, displayName: string) => Promise<{ error: Error | null }>;
@@ -23,22 +21,53 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Transform Supabase user to include Firebase-compatible properties
+const transformUser = (supabaseUser: SupabaseUser | null): User | null => {
+  if (!supabaseUser) return null;
+  
+  return {
+    ...supabaseUser,
+    uid: supabaseUser.id,
+    displayName: supabaseUser.user_metadata?.display_name || 
+                 supabaseUser.user_metadata?.full_name || 
+                 supabaseUser.email?.split('@')[0] || null,
+    photoURL: supabaseUser.user_metadata?.avatar_url || 
+              supabaseUser.user_metadata?.picture || null,
+  };
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(transformUser(session?.user ?? null));
+        setLoading(false);
+      }
+    );
+
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(transformUser(session?.user ?? null));
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
       return { error: null };
     } catch (error) {
       console.error('Sign in error:', error);
@@ -48,21 +77,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signUp = async (email: string, password: string, displayName: string) => {
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const redirectUrl = `${window.location.origin}/`;
       
-      // Update display name
-      await updateProfile(user, { displayName });
-      
-      // Create user profile in Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        email: user.email,
-        displayName: displayName,
-        photoURL: user.photoURL || '',
-        createdAt: new Date(),
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            display_name: displayName,
+            full_name: displayName,
+          },
+        },
       });
-      
+      if (error) throw error;
       return { error: null };
     } catch (error) {
       console.error('Sign up error:', error);
@@ -72,19 +100,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signInWithGoogle = async () => {
     try {
-      const provider = new GoogleAuthProvider();
-      const userCredential = await signInWithPopup(auth, provider);
-      const user = userCredential.user;
-      
-      // Create or update user profile in Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || 'Google User',
-        photoURL: user.photoURL || '',
-        createdAt: new Date(),
-      }, { merge: true });
-      
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
+      if (error) throw error;
       return { error: null };
     } catch (error) {
       console.error('Google sign in error:', error);
@@ -92,21 +114,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const signOut = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
         user,
+        session,
         loading,
         signIn,
         signUp,
         signInWithGoogle,
-        signOut: async () => {
-          try {
-            await firebaseSignOut(auth);
-          } catch (error) {
-            console.error('Sign out error:', error);
-          }
-        },
+        signOut,
       }}
     >
       {children}
