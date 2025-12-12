@@ -8,10 +8,15 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Settings, MapPin, Calendar, Grid, Image as ImageIcon, Repeat } from "lucide-react";
+import { Settings, MapPin, Calendar, Grid, Image as ImageIcon, Repeat, Star } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TradingCard } from "@/components/TradingCard";
-import { TradeOfferDialog } from "@/components/TradeOfferDialog"; // Make sure this component exists and is exported
+import { TradeOfferDialog } from "@/components/TradeOfferDialog";
+import { FollowButton } from "@/components/FollowButton";
+import { FollowStats } from "@/components/FollowStats";
+import { SellerRatingBadge } from "@/components/SellerRatingBadge";
+import { RatingDialog } from "@/components/RatingDialog";
+import { useSellerRating } from "@/hooks/useSellerRating";
 
 interface UserProfile {
   displayName: string;
@@ -48,9 +53,13 @@ const Profile = () => {
   
   // Trade Dialog State
   const [isTradeOpen, setIsTradeOpen] = useState(false);
+  const [isRatingOpen, setIsRatingOpen] = useState(false);
 
   const targetUid = uid || user?.uid;
   const isOwnProfile = user?.uid === targetUid;
+  
+  // Seller rating hook
+  const { stats: sellerStats } = useSellerRating(targetUid);
 
   useEffect(() => {
     if (!targetUid) return;
@@ -139,9 +148,14 @@ const Profile = () => {
           <div className="flex gap-2">
             {/* Trade Button (Only for other profiles) */}
             {!isOwnProfile && (
-              <Button size="sm" onClick={() => setIsTradeOpen(true)} className="gap-2">
-                <Repeat className="h-4 w-4" /> Trade
-              </Button>
+              <>
+                <Button size="sm" onClick={() => setIsTradeOpen(true)} className="gap-2">
+                  <Repeat className="h-4 w-4" /> Trade
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setIsRatingOpen(true)} className="gap-2">
+                  <Star className="h-4 w-4" /> Rate
+                </Button>
+              </>
             )}
 
             {isOwnProfile ? (
@@ -149,7 +163,7 @@ const Profile = () => {
                 Edit Profile
               </Button>
             ) : (
-              <Button size="sm" variant="outline">Follow</Button>
+              <FollowButton targetUserId={targetUid!} size="sm" />
             )}
           </div>
         </div>
@@ -160,6 +174,17 @@ const Profile = () => {
             {profile?.isContentCreator && <Badge variant="default" className="bg-blue-500">Creator</Badge>}
             {profile?.isAdmin && <Badge variant="destructive">Admin</Badge>}
           </div>
+
+          {/* Seller Rating Badge */}
+          {(sellerStats.totalRatings > 0 || sellerStats.isVerified) && (
+            <SellerRatingBadge
+              rating={sellerStats.averageRating}
+              totalRatings={sellerStats.totalRatings}
+              isVerified={sellerStats.isVerified}
+              totalSales={sellerStats.totalSales}
+              showDetails
+            />
+          )}
 
           {profile?.badges && profile.badges.length > 0 && (
             <div className="flex gap-1 flex-wrap">
@@ -184,18 +209,11 @@ const Profile = () => {
             </div>
           </div>
 
-          <div className="flex gap-4 py-3 border-b border-border">
+          <div className="flex gap-4 py-3 border-b border-border items-center">
+            {targetUid && <FollowStats userId={targetUid} />}
             <div className="text-center">
-              <span className="font-bold block text-lg">{profile?.followers?.length || 0}</span>
-              <span className="text-xs text-muted-foreground">Followers</span>
-            </div>
-            <div className="text-center">
-              <span className="font-bold block text-lg">{profile?.following?.length || 0}</span>
-              <span className="text-xs text-muted-foreground">Following</span>
-            </div>
-            <div className="text-center">
-              <span className="font-bold block text-lg">{userCollection.length}</span>
-              <span className="text-xs text-muted-foreground">Cards</span>
+              <span className="font-semibold text-foreground">{userCollection.length}</span>
+              <span className="text-muted-foreground ml-1">Cards</span>
             </div>
           </div>
         </div>
@@ -268,12 +286,20 @@ const Profile = () => {
       </Tabs>
 
       {/* Trade Offer Dialog */}
-      {!isOwnProfile && (
+      {!isOwnProfile && targetUid && (
+        <>
           <TradeOfferDialog 
             open={isTradeOpen} 
             onOpenChange={setIsTradeOpen} 
             partner={{ uid: targetUid, displayName: profile?.displayName }} 
           />
+          <RatingDialog
+            open={isRatingOpen}
+            onOpenChange={setIsRatingOpen}
+            sellerId={targetUid}
+            sellerName={profile?.displayName}
+          />
+        </>
       )}
     </div>
   );

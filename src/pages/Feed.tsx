@@ -5,7 +5,7 @@ import { db } from "@/lib/firebase";
 import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Heart, MessageCircle, Share2, Plus, User, Settings as SettingsIcon, LogOut } from "lucide-react";
+import { Heart, MessageCircle, Share2, Plus, User, Settings as SettingsIcon, LogOut, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logo from "@/assets/hatake-logo.png";
 import { PostGallery } from "@/components/PostGallery";
@@ -13,6 +13,8 @@ import { CreatePostDialog } from "@/components/CreatePostDialog";
 import { CommentSection } from "@/components/CommentSection";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { useFollowing } from "@/hooks/useFollowing";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Post {
   id: string;
@@ -44,12 +46,22 @@ const Feed = () => {
   const [error, setError] = useState<string | null>(null);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
+  const [feedFilter, setFeedFilter] = useState<'all' | 'following'>('all');
+  const [followedIds, setFollowedIds] = useState<string[]>([]);
+  const { getFollowedUserIds } = useFollowing();
 
   useEffect(() => {
     if (!user) {
       navigate('/auth');
       return;
     }
+
+    // Fetch followed user IDs
+    const fetchFollowedIds = async () => {
+      const ids = await getFollowedUserIds();
+      setFollowedIds(ids);
+    };
+    fetchFollowedIds();
 
     const postsRef = collection(db, 'posts');
     const q = query(postsRef, orderBy('timestamp', 'desc'), limit(50));
@@ -71,7 +83,12 @@ const Feed = () => {
     );
 
     return () => unsubscribe();
-  }, [user, navigate]);
+  }, [user, navigate, getFollowedUserIds]);
+
+  // Filter posts based on selected feed filter
+  const filteredPosts = feedFilter === 'following' 
+    ? posts.filter(post => followedIds.includes(post.authorId) || post.authorId === user?.uid)
+    : posts;
 
   const handleLogout = async () => {
     await signOut();
@@ -145,8 +162,21 @@ const Feed = () => {
         </div>
       </header>
 
+      {/* Feed Filter Tabs */}
+      <div className="max-w-2xl mx-auto px-4 pt-4">
+        <Tabs value={feedFilter} onValueChange={(v) => setFeedFilter(v as 'all' | 'following')}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="all">All Posts</TabsTrigger>
+            <TabsTrigger value="following" className="gap-2">
+              <Users className="h-4 w-4" />
+              Following
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
       {/* Main Feed */}
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+      <div className="max-w-2xl mx-auto px-4 py-4 space-y-5">
         {loading ? (
           <div className="space-y-4">
              {[1, 2, 3].map(i => (
@@ -158,19 +188,31 @@ const Feed = () => {
             <p className="text-destructive font-medium mb-1">Error loading feed</p>
             <p className="text-xs text-muted-foreground">{error}</p>
           </Card>
-        ) : posts.length === 0 ? (
+        ) : filteredPosts.length === 0 ? (
           <Card className="p-12 text-center border-dashed">
             <div className="flex flex-col items-center gap-2">
                 <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-2">
-                    <Plus className="h-6 w-6 text-muted-foreground" />
+                    {feedFilter === 'following' ? (
+                      <Users className="h-6 w-6 text-muted-foreground" />
+                    ) : (
+                      <Plus className="h-6 w-6 text-muted-foreground" />
+                    )}
                 </div>
-                <h3 className="font-semibold">No posts yet</h3>
-                <p className="text-sm text-muted-foreground">Be the first to share something!</p>
-                <Button className="mt-4" onClick={() => setIsCreatePostOpen(true)}>Create Post</Button>
+                <h3 className="font-semibold">
+                  {feedFilter === 'following' ? 'No posts from people you follow' : 'No posts yet'}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {feedFilter === 'following' 
+                    ? 'Follow some users to see their posts here!' 
+                    : 'Be the first to share something!'}
+                </p>
+                {feedFilter === 'all' && (
+                  <Button className="mt-4" onClick={() => setIsCreatePostOpen(true)}>Create Post</Button>
+                )}
             </div>
           </Card>
         ) : (
-          posts.map((post) => (
+          filteredPosts.map((post) => (
             <Card key={post.id} className="p-0 overflow-hidden border-border/60 shadow-sm hover:shadow-md transition-shadow">
               <div className="p-4 pb-2">
                 {/* Post Header */}
