@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/lib/firebase";
+import { collection, query, orderBy, limit, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Heart, MessageCircle, Share2, Plus, User, Settings as SettingsIcon, LogOut } from "lucide-react";
@@ -16,30 +17,29 @@ import { toast } from "sonner";
 interface Post {
   id: string;
   content: string;
-  user_id: string;
+  authorId: string;
   author?: string;
-  author_photo_url?: string;
-  created_at: string;
+  authorPhotoURL?: string;
+  timestamp: any;
   likes: string[];
   hashtags?: string[];
-  media_urls?: string[];
+  mediaUrls?: string[];
+  mediaTypes?: string[];
 }
 
 interface Comment {
   id: string;
   content: string;
-  user_id: string;
-  created_at: string;
+  authorId: string;
+  timestamp: any;
   author?: string;
-  author_photo_url?: string;
+  authorPhotoURL?: string;
 }
 
 const Feed = () => {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [posts, setPosts] = useState<Post[]>([]);
-  const [comments, setComments] = useState<Record<string, Comment[]>>({});
-  const [profiles, setProfiles] = useState<Record<string, { display_name: string; photo_url: string }>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
@@ -51,53 +51,26 @@ const Feed = () => {
       return;
     }
 
-    const fetchPosts = async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
+    const postsRef = collection(db, 'posts');
+    const q = query(postsRef, orderBy('timestamp', 'desc'), limit(50));
 
-      if (error) {
-        console.error('Feed error:', error);
-        setError(error.message);
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const postsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as Post[];
+        setPosts(postsData);
         setLoading(false);
-        return;
+      },
+      (err) => {
+        console.error('Feed error:', err);
+        setError(err.message);
+        setLoading(false);
       }
+    );
 
-      setPosts(data || []);
-      
-      // Fetch profiles for post authors
-      const userIds = [...new Set((data || []).map(p => p.user_id))];
-      if (userIds.length > 0) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, display_name, photo_url')
-          .in('id', userIds);
-        
-        const profileMap: Record<string, { display_name: string; photo_url: string }> = {};
-        (profilesData || []).forEach(p => {
-          profileMap[p.id] = { display_name: p.display_name || 'Unknown', photo_url: p.photo_url || '' };
-        });
-        setProfiles(profileMap);
-      }
-      
-      setLoading(false);
-    };
-
-    fetchPosts();
-
-    // Subscribe to realtime updates
-    const channel = supabase
-      .channel('posts-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
-        fetchPosts();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [user, navigate]);
 
   const handleLogout = async () => {
@@ -108,20 +81,17 @@ const Feed = () => {
   const handleLike = async (postId: string, likes: string[]) => {
     if (!user) return;
     const isLiked = likes.includes(user.uid);
-    const newLikes = isLiked 
-      ? likes.filter(id => id !== user.uid)
-      : [...likes, user.uid];
+    const postRef = doc(db, 'posts', postId);
     
-    const { error } = await supabase
-      .from('posts')
-      .update({ likes: newLikes })
-      .eq('id', postId);
-    
-    if (error) {
-      console.error('Error updating like:', error);
+    try {
+      if (isLiked) {
+        await updateDoc(postRef, { likes: arrayRemove(user.uid) });
+      } else {
+        await updateDoc(postRef, { likes: arrayUnion(user.uid) });
+      }
+    } catch (err) {
+      console.error('Error updating like:', err);
       toast.error('Failed to update like');
-    } else {
-      setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes: newLikes } : p));
     }
   };
 
@@ -131,9 +101,6 @@ const Feed = () => {
     if (parts.length === 0) return '?';
     return parts.map((n) => n[0]).join('').toUpperCase().slice(0, 2);
   };
-
-  const getAuthorName = (userId: string) => profiles[userId]?.display_name || 'Unknown';
-  const getAuthorPhoto = (userId: string) => profiles[userId]?.photo_url || '';
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -209,17 +176,17 @@ const Feed = () => {
                 {/* Post Header */}
                 <div className="flex items-center gap-3 mb-3">
                     <Avatar className="h-10 w-10 border border-border">
-                    <AvatarImage src={getAuthorPhoto(post.user_id)} />
+                    <AvatarImage src={post.authorPhotoURL || ''} />
                     <AvatarFallback className="bg-muted text-muted-foreground font-medium">
-                        {getInitials(getAuthorName(post.user_id))}
+                        {getInitials(post.author)}
                     </AvatarFallback>
                     </Avatar>
                     <div className="flex-1 min-w-0">
-                      <Link to={`/profile/${post.user_id}`} className="font-semibold text-sm truncate hover:underline block">
-                        {getAuthorName(post.user_id)}
+                      <Link to={`/profile/${post.authorId}`} className="font-semibold text-sm truncate hover:underline block">
+                        {post.author || 'Unknown'}
                       </Link>
                       <p className="text-xs text-muted-foreground">
-                          {new Date(post.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          {post.timestamp?.toDate ? new Date(post.timestamp.toDate()).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now'}
                       </p>
                     </div>
                 </div>
@@ -240,11 +207,11 @@ const Feed = () => {
               </div>
 
               {/* Post Media Gallery (Full Width) */}
-              {post.media_urls && post.media_urls.length > 0 && (
+              {post.mediaUrls && post.mediaUrls.length > 0 && (
                 <div className="w-full">
                     <PostGallery 
-                        mediaUrls={post.media_urls} 
-                        mediaTypes={[]} 
+                        mediaUrls={post.mediaUrls} 
+                        mediaTypes={post.mediaTypes || []} 
                     />
                 </div>
               )}
@@ -254,11 +221,11 @@ const Feed = () => {
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  className={`gap-1.5 px-2 hover:bg-red-50 hover:text-red-500 ${post.likes.includes(user?.uid || '') ? 'text-red-500' : 'text-muted-foreground'}`}
-                  onClick={() => handleLike(post.id, post.likes)}
+                  className={`gap-1.5 px-2 hover:bg-red-50 hover:text-red-500 ${post.likes?.includes(user?.uid || '') ? 'text-red-500' : 'text-muted-foreground'}`}
+                  onClick={() => handleLike(post.id, post.likes || [])}
                 >
-                  <Heart className={`h-5 w-5 ${post.likes.includes(user?.uid || '') ? 'fill-current' : ''}`} />
-                  <span className="text-xs font-medium">{post.likes.length || 0}</span>
+                  <Heart className={`h-5 w-5 ${post.likes?.includes(user?.uid || '') ? 'fill-current' : ''}`} />
+                  <span className="text-xs font-medium">{post.likes?.length || 0}</span>
                 </Button>
                 
                 <Button 
