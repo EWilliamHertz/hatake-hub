@@ -423,7 +423,10 @@ export type Database = {
           display_name: string | null
           email: string | null
           id: string
+          is_verified_seller: boolean | null
           photo_url: string | null
+          seller_rating: number | null
+          total_sales: number | null
           updated_at: string | null
         }
         Insert: {
@@ -432,7 +435,10 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           id: string
+          is_verified_seller?: boolean | null
           photo_url?: string | null
+          seller_rating?: number | null
+          total_sales?: number | null
           updated_at?: string | null
         }
         Update: {
@@ -441,8 +447,41 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           id?: string
+          is_verified_seller?: boolean | null
           photo_url?: string | null
+          seller_rating?: number | null
+          total_sales?: number | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      seller_ratings: {
+        Row: {
+          buyer_id: string
+          created_at: string
+          id: string
+          rating: number
+          review: string | null
+          seller_id: string
+          transaction_id: string | null
+        }
+        Insert: {
+          buyer_id: string
+          created_at?: string
+          id?: string
+          rating: number
+          review?: string | null
+          seller_id: string
+          transaction_id?: string | null
+        }
+        Update: {
+          buyer_id?: string
+          created_at?: string
+          id?: string
+          rating?: number
+          review?: string | null
+          seller_id?: string
+          transaction_id?: string | null
         }
         Relationships: []
       }
@@ -482,6 +521,27 @@ export type Database = {
           status?: string | null
           to_user_id?: string
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      user_follows: {
+        Row: {
+          created_at: string
+          follower_id: string
+          following_id: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          follower_id: string
+          following_id: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          follower_id?: string
+          following_id?: string
+          id?: string
         }
         Relationships: []
       }

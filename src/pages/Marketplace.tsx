@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, where } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Shield, TrendingUp, Clock, Filter } from "lucide-react";
+import { Shield, TrendingUp, Clock, Filter, Star } from "lucide-react";
 import { TradingCard } from "@/components/TradingCard";
 import { TradeOfferDialog } from "@/components/TradeOfferDialog";
+import { SellerRatingBadge } from "@/components/SellerRatingBadge";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Select,
   SelectContent,
@@ -18,11 +20,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+interface SellerInfo {
+  seller_rating: number;
+  is_verified_seller: boolean;
+  total_sales: number;
+}
+
 interface MarketplaceListing {
   id: string;
   cardId: string;
   sellerId: string;
   sellerName?: string;
+  sellerInfo?: SellerInfo;
   price: number;
   quantity: number;
   condition: string;
@@ -63,11 +72,34 @@ const Marketplace = () => {
     const q = query(marketplaceRef, orderBy('createdAt', 'desc'));
 
     const unsubscribe = onSnapshot(q, 
-      (snapshot) => {
+      async (snapshot) => {
         const listingsData = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         })) as MarketplaceListing[];
+        
+        // Fetch seller ratings from Supabase
+        const sellerIds = [...new Set(listingsData.map(l => l.sellerId))];
+        if (sellerIds.length > 0) {
+          const { data: sellerProfiles } = await supabase
+            .from('profiles')
+            .select('id, seller_rating, is_verified_seller, total_sales')
+            .in('id', sellerIds);
+          
+          const sellerMap = new Map(sellerProfiles?.map(p => [p.id, p]));
+          
+          listingsData.forEach(listing => {
+            const sellerData = sellerMap.get(listing.sellerId);
+            if (sellerData) {
+              listing.sellerInfo = {
+                seller_rating: sellerData.seller_rating || 0,
+                is_verified_seller: sellerData.is_verified_seller || false,
+                total_sales: sellerData.total_sales || 0
+              };
+            }
+          });
+        }
+        
         setListings(listingsData);
         setLoading(false);
       },
@@ -283,9 +315,19 @@ const Marketplace = () => {
                     </Button>
                   </div>
 
-                  <p className="text-[10px] text-muted-foreground text-center truncate">
-                    {listing.sellerName || 'Unknown Seller'}
-                  </p>
+                  <div className="flex items-center justify-center gap-1">
+                    {listing.sellerInfo && (listing.sellerInfo.seller_rating > 0 || listing.sellerInfo.is_verified_seller) ? (
+                      <SellerRatingBadge
+                        rating={listing.sellerInfo.seller_rating}
+                        totalRatings={listing.sellerInfo.total_sales}
+                        isVerified={listing.sellerInfo.is_verified_seller}
+                      />
+                    ) : (
+                      <p className="text-[10px] text-muted-foreground truncate">
+                        {listing.sellerName || 'Unknown Seller'}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </Card>
             ))}
